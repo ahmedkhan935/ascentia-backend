@@ -10,6 +10,8 @@ const userSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
     lastLogin: Date,
+    current_status: { type: String, enum: ['online', 'offline'], default: 'offline' },
+    resetCode: String
   });
 const User = mongoose.model('User', userSchema);
 module.exports = User;

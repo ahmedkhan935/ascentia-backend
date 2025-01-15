@@ -8,7 +8,7 @@ const studentRoutes = require('./admin/student.routes');
 const tutorRoutes = require('./admin/tutor.routes');
 const familyRoutes = require('./admin/family.routes');
 
-// Mount routes
+//Mount routes
 router.use('/auth', authRoutes);
 router.use('/admin/students', studentRoutes);
 router.use('/admin/tutors', tutorRoutes);
