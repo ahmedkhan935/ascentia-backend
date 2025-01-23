@@ -52,11 +52,10 @@ const tutorProfileSchema = new mongoose.Schema({
         },
         description: String
     }],
-    subjects: [{
-        name: String,
+    subjects: [
+        String
         
-        isActive: { type: Boolean, default: true }
-    }],
+    ],
     grade:String,
     classCategories: [{
         type: String,
@@ -65,7 +64,8 @@ const tutorProfileSchema = new mongoose.Schema({
     qualifications: [{
         degree: String,
         institution: String,
-        year: Number,
+        startDate: Date,
+        endDate: Date,
         document: Buffer
     }],
     shifts: [{
@@ -121,106 +121,19 @@ const tutorProfileSchema = new mongoose.Schema({
     },
     assignedBlogs:Number,
     publishedBlogs:Number,
-    
+    creditBalance:{
+        type:Number,
+        default:0
+    },
+    category:{
+        type:String
+    }
     
 }, {
     timestamps: true
 });
 
 // Methods for schedule management
-tutorProfileSchema.methods.isAvailable = async function(date, startTime, endTime) {
-    // Check if date has an exception
-    const exception = this.scheduleExceptions.find(ex => 
-        ex.date.toDateString() === date.toDateString()
-    );
-
-    if (exception) {
-        if (exception.type === 'unavailable') return false;
-        if (exception.type === 'modified') {
-            return !timeRangeOverlap(
-                startTime, 
-                endTime, 
-                exception.modifiedSchedule.startTime, 
-                exception.modifiedSchedule.endTime
-            );
-        }
-    }
-
-    // Check default schedule
-    const dayOfWeek = date.getDay();
-    const defaultScheduleForDay = this.defaultSchedule.find(s => 
-        s.dayOfWeek === dayOfWeek
-    );
-
-    if (!defaultScheduleForDay) return false;
-
-    return !timeRangeOverlap(
-        startTime, 
-        endTime, 
-        defaultScheduleForDay.startTime, 
-        defaultScheduleForDay.endTime
-    );
-};
-
-tutorProfileSchema.methods.getScheduleForWeek = async function(startDate) {
-    const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + 7);
-
-    const schedule = [];
-    let currentDate = new Date(startDate);
-
-    while (currentDate < endDate) {
-        const daySchedule = {
-            date: new Date(currentDate),
-            shifts: []
-        };
-
-        // Check for exceptions
-        const exception = this.scheduleExceptions.find(ex => 
-            ex.date.toDateString() === currentDate.toDateString()
-        );
-
-        if (exception) {
-            if (exception.type === 'modified') {
-                daySchedule.shifts.push({
-                    startTime: exception.modifiedSchedule.startTime,
-                    endTime: exception.modifiedSchedule.endTime,
-                    isException: true
-                });
-            }
-        } else {
-            // Get default schedule for this day
-            const defaultShifts = this.defaultSchedule.filter(s => 
-                s.dayOfWeek === currentDate.getDay()
-            );
-            daySchedule.shifts = defaultShifts.map(shift => ({
-                startTime: shift.startTime,
-                endTime: shift.endTime,
-                isException: false
-            }));
-        }
-
-        schedule.push(daySchedule);
-        currentDate.setDate(currentDate.getDate() + 1);
-    }
-
-    return schedule;
-};
-
-// Validations
-tutorProfileSchema.pre('save', function(next) {
-    // Validate schedule times
-    this.shifts.forEach(schedule => {
-        const start = schedule.startTime.split(':').map(Number);
-        const end = schedule.endTime.split(':').map(Number);
-        
-        if (start[0] > end[0] || (start[0] === end[0] && start[1] >= end[1])) {
-            throw new Error('End time must be after start time');
-        }
-    });
-
-    next();
-});
 
 const TutorProfile = mongoose.model('TutorProfile', tutorProfileSchema);
 module.exports = TutorProfile;

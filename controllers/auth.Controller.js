@@ -113,7 +113,58 @@ const authController = {
             //send email
             const subject = 'Password Reset';
             const text = `Your password reset code is ${resetCode}`;
-            const html = `<p>Your password reset code is <strong>${resetCode}</strong></p>`;
+                        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        line-height: 1.6;
+                        color: #333;
+                    }
+                    .container {
+                        width: 80%;
+                        margin: 0 auto;
+                        padding: 20px;
+                        border: 1px solid #ddd;
+                        border-radius: 5px;
+                        background-color: #f9f9f9;
+                    }
+                    .header, .footer {
+                        text-align: center;
+                        background-color: #4CAF50;
+                        color: white;
+                        padding: 10px 0;
+                    }
+                    .content {
+                        margin: 20px 0;
+                    }
+                    .reset-code {
+                        font-size: 1.2em;
+                        font-weight: bold;
+                        color: #4CAF50;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>Company Name</h1>
+                    </div>
+                    <div class="content">
+                        <p>Dear User,</p>
+                        <p>Your password reset code is:</p>
+                        <p class="reset-code">${resetCode}</p>
+                        <p>Please use this code to reset your password. If you did not request a password reset, please ignore this email.</p>
+                    </div>
+                    <div class="footer">
+                        <p>Company Name</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            `;
             await sendEmail(email, subject, text, html);
             res.json({ message: 'Password reset link sent' });
 
@@ -129,7 +180,8 @@ const authController = {
             if (!user) {
                 return res.status(404).json({ message: 'User not found' });
             }
-            if (user.resetCode !== resetCode) {
+            
+            if (user.resetCode != resetCode) {
                 return res.status(400).json({ message: 'Invalid reset code' });
             }
             else{
