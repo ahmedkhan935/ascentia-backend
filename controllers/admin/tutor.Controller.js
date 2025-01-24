@@ -43,60 +43,46 @@ const tutorController = {
         phone,
       });
 
-      await newTutor.save();
-
-      const tutorProfile = new TutorProfile({
-        user: newTutor._id,
-        subjects: subjects,
-        qualifications: {
-          degree,
-          institution: university,
-          startDate,
-          endDate,
-        },
-        shifts,
-        category,
-      });
+            
+            await newTutor.save();
+            const tutorProfile = new TutorProfile({
+                user: newTutor._id,
+                subjects:subjects,
+                qualifications:{
+                    degree,
+                    institution:university,
+                    startDate,
+                    endDate
+                    
+                },
+                shifts,
+                category
+            });
 
       await tutorProfile.save();
 
       await createLog("CREATE", "TUTOR", newTutor._id, req.user, req);
 
-      res.status(201).json({
-        message: "Tutor created successfully",
-        tutor: {
-          _id: newTutor._id,
-          email: newTutor.email,
-          firstName: newTutor.firstName,
-          lastName: newTutor.lastName,
-          profile: tutorProfile,
-        },
-      });
-    } catch (error) {
-      res
-        .status(500)
-        .json({ message: "Error creating tutor", error: error.message });
-    }
-  },
-
-  // getAll: async (req, res) => {
-  //     try {
-  //         const page = req.query.page || 1;
-  //         const limit = req.qeury.limit || 10;
-  //         const tutors = await TutorProfile.find
-  //         await createLog('READ', 'TUTOR', null, req.user, req);
-
-  //         res.json(tutors);
-  //     } catch (error) {
-  //         res.status(500).json({ message: 'Error fetching tutors', error: error.message });
-  //     }
-  // },
-  getAll: async (req, res) => {
-    try {
-      const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 10;
-      const search = req.query.search || "";
-      const status = req.query.status;
+            res.status(200).json({
+                message: 'Tutor created successfully',
+                tutor: {
+                    _id: newTutor._id,
+                    email: newTutor.email,
+                    firstName: newTutor.firstName,
+                    lastName: newTutor.lastName,
+                    profile: tutorProfile
+                }
+            });
+        } catch (error) {
+            res.status(500).json({ message: 'Error creating tutor', error: error.message });
+        }
+    },
+    getAll: async (req, res) => {
+        try {
+            const page = parseInt(req.query.page) || 1;
+            const limit = parseInt(req.query.limit) || 10;
+            const search = req.query.search || '';
+            const status = req.query.status;
 
       let query = {};
 
@@ -125,12 +111,13 @@ const tutorController = {
       // Get total count for pagination
       const total = await TutorProfile.countDocuments(query);
 
-      // Get paginated tutor profiles with populated user data
-      const tutors = await TutorProfile.find(query)
-        .populate("user", "firstName lastName email")
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .sort({ createdAt: -1 });
+            // Get paginated tutor profiles with populated user data
+            const tutors = await TutorProfile.find(query)
+                .populate('user', 'firstName lastName email')
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .sort({ createdAt: -1 });
+            console.log(tutors);
 
       // Transform the data for frontend
       //calculate work hours for each week
@@ -163,22 +150,23 @@ const tutorController = {
 
       await createLog("READ", "TUTOR", null, req.user, req);
 
-      res.json({
-        tutors: transformedTutors,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
-        },
-      });
-    } catch (error) {
-      res.status(500).json({
-        message: "Error fetching tutors",
-        error: error.message,
-      });
-    }
-  },
+            res.json({
+                tutors: transformedTutors,
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    pages: Math.ceil(total / limit)
+                }
+            });
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({
+                message: 'Error fetching tutors',
+                error: error.message
+            });
+        }
+    },
 
   getById: async (req, res) => {
     try {

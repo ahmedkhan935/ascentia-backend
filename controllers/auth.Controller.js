@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { createLog } = require('../middleware/logger');
-const sendEmail = require('../config/email');
+const sendEmail = require('../utils/email');
 
 const authController = {
     createAdmin: async (req, res) => {
