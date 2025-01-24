@@ -1,29 +1,56 @@
 const User = require('../../models/User');
 const { createLog } = require('../../middleware/logger');
+const Family = require('../../models/Family');
+const Class = require('../../models/Class');
 const bcrypt = require('bcryptjs');
+const Payment = require('../../models/Payment');
 
 const studentController = {
     create: async (req, res) => {
         try {
-            const { email, password, firstName, lastName, phone } = req.body;
+            const student = req.body.student?JSON.parse(req.body.student):req.body;
+            console.log(student);
+
+          
 
             const salt = await bcrypt.genSalt(10);
-            const hashedPassword = await bcrypt.hash(password, salt);
+            const hashedPassword = await bcrypt.hash(student.password, salt);
 
             const newStudent = new User({
-                email,
+                email:student.email,
                 password: hashedPassword,
                 role: 'student',
-                firstName,
-                lastName,
-                phone
+                firstName: student.firstName,
+                lastName: student.lastName,
+                phone: student.phone,
+                dateOfBirth: student.dateOfBirth,
+                paymentSchedule: student.prefferedPayment
             });
-
+            
+            const parent = student.parent;
+            const hashedPassword2 = await bcrypt.hash(parent.password, salt);
+            const newParent = new User({
+                email: parent.email,
+                password: hashedPassword,
+                role: 'parent',
+                firstName: parent.firstName,
+                lastName: parent.lastName,
+                phone: parent.phone,
+                dateOfBirth: parent.dob
+            });
+            const newFamily = new Family({
+                parentUser: newParent._id,
+                students: [newStudent._id]
+            });
+            
             await newStudent.save();
+            await newParent.save();
+            await newFamily.save();
 
             await createLog('CREATE', 'USER', newStudent._id, req.user, req, { role: 'student' });
 
-            res.status(201).json({
+            res.status(200).json({
+                status: 'success',
                 message: 'Student created successfully',
                 student: {
                     _id: newStudent._id,
@@ -33,7 +60,7 @@ const studentController = {
                 }
             });
         } catch (error) {
-            res.status(500).json({ message: 'Error creating student', error: error.message });
+            res.status(500).json({ status:"Error",message: 'Error creating student', error: error.message });
         }
     },
 
@@ -47,6 +74,59 @@ const studentController = {
             res.json(students);
         } catch (error) {
             res.status(500).json({ message: 'Error fetching students', error: error.message });
+        }
+    },
+    getAllFormatted: async (req, res) => {
+        try
+        {
+            const Students = await User.find({ role: 'student' }).select('-password');
+            let data = [];
+            //append the class object for each class for each student
+            for (let i = 0; i < Students.length; i++) {
+                let student = Students[i];
+                
+                let classes = await Class.find({ students: { $in: [student._id] } }).select('-students');
+                const family = await Family.findOne({ students: { $in: [student._id] } }).select('-_id');   
+                const Payments = await Payment.find({
+                    $or: [
+                        { user: student._id },
+                        { user: family?.parentUser }
+                    ]
+                }).select('-student');
+                const subjects = [];
+                if(classes.length>0)
+                {
+                    classes.map((cls)=>{
+                        if(!subjects.includes(cls.subject))
+                        {
+                            subjects.push(cls.subject);
+                        }
+                    }   
+                    );
+                }
+                data.push({
+                    id: student._id,
+                    name: student.firstName + ' ' + student.lastName,
+                    email: student.email,
+                    initials: student.firstName.charAt(0) + student.lastName.charAt(0),
+                    classes: classes.length + ' classes',
+                    subjects: subjects,
+                    subscription: student.paymentSchedule,
+                    paymentHistory:Payments,
+                    isActive: student.isActive,
+
+
+                })
+            }
+            res.status(200).json({
+                status: 'success',
+                data: data
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ message: 'Error fetching students', error: error.message,status:"Error" });
+
         }
     },
 
@@ -71,11 +151,34 @@ const studentController = {
 
     update: async (req, res) => {
         try {
-            const { firstName, lastName, phone } = req.body;
+            console.log(req.body);
+            const { firstName, lastName, email,password,isActive } = req.body;
+            let updateData={};
+            
+            if(password) {
+                const salt = await bcrypt.genSalt(10);
+                const hashedPassword = await bcrypt.hash(password, salt);
+               updateData.password = hashedPassword;
+            }
+            if(isActive===true||isActive===false) {
+                updateData.isActive = isActive;
+            }
+            if(firstName) {
+                updateData.firstName = firstName;
+            }
+            if(lastName) {
+                updateData.lastName = lastName;
+            }
+            if(email) {
+                updateData.email = email;
+            }
+
+            console.log(updateData);
+
 
             const student = await User.findOneAndUpdate(
                 { _id: req.params.id, role: 'student' },
-                { firstName, lastName, phone },
+                updateData,
                 { new: true }
             ).select('-password');
 

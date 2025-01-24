@@ -11,7 +11,13 @@ const userSchema = new mongoose.Schema({
     updatedAt: { type: Date, default: Date.now },
     lastLogin: Date,
     current_status: { type: String, enum: ['online', 'offline'], default: 'offline' },
-    resetCode: String
+    resetCode: String,
+    paymentSchedule: {
+        type: String,
+        enum: ['Per Class', 'Monthly', 'Term Wise']
+    },
+    dateOfBirth: Date,
+    isActive: { type: Boolean, default: true },
   });
 const User = mongoose.model('User', userSchema);
 module.exports = User;

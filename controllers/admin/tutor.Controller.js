@@ -38,8 +38,8 @@ const tutorController = {
             });
 
 
+            
             await newTutor.save();
-   
             const tutorProfile = new TutorProfile({
                 user: newTutor._id,
                 subjects:subjects,
@@ -58,7 +58,7 @@ const tutorController = {
 
             await createLog('CREATE', 'TUTOR', newTutor._id, req.user, req);
 
-            res.status(201).json({
+            res.status(200).json({
                 message: 'Tutor created successfully',
                 tutor: {
                     _id: newTutor._id,
@@ -72,19 +72,6 @@ const tutorController = {
             res.status(500).json({ message: 'Error creating tutor', error: error.message });
         }
     },
-
-    // getAll: async (req, res) => {
-    //     try {
-    //         const page = req.query.page || 1;
-    //         const limit = req.qeury.limit || 10;
-    //         const tutors = await TutorProfile.find
-    //         await createLog('READ', 'TUTOR', null, req.user, req);
-
-    //         res.json(tutors);
-    //     } catch (error) {
-    //         res.status(500).json({ message: 'Error fetching tutors', error: error.message });
-    //     }
-    // },
     getAll: async (req, res) => {
         try {
             const page = parseInt(req.query.page) || 1;
@@ -125,6 +112,7 @@ const tutorController = {
                 .skip((page - 1) * limit)
                 .limit(limit)
                 .sort({ createdAt: -1 });
+            console.log(tutors);
 
             // Transform the data for frontend
             //calculate work hours for each week
@@ -164,6 +152,7 @@ const tutorController = {
                 }
             });
         } catch (error) {
+            console.log(error);
             res.status(500).json({
                 message: 'Error fetching tutors',
                 error: error.message

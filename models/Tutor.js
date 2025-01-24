@@ -1,6 +1,5 @@
 // models/Tutor.js
 const mongoose = require('mongoose');
-const { timeRangeOverlap } = require('../utils/timeUtils');
 
 const scheduleExceptionSchema = new mongoose.Schema({
     date: { 
@@ -27,14 +26,7 @@ const tutorProfileSchema = new mongoose.Schema({
     },
     personalDetails: {
         dateOfBirth: Date,
-        photo: Buffer,
-        phone: String,
-        address: {
-            street: String,
-            city: String,
-            state: String,
-            postalCode: String
-        }
+        photoUrl: String,
     },
     education: {
         university: String,
@@ -43,15 +35,6 @@ const tutorProfileSchema = new mongoose.Schema({
         major: String,
         city: String
     },
-    workExperience: [{
-        company: String,
-        position: String,
-        period: {
-            start: Date,
-            end: Date
-        },
-        description: String
-    }],
     subjects: [
         String
         
@@ -65,8 +48,7 @@ const tutorProfileSchema = new mongoose.Schema({
         degree: String,
         institution: String,
         startDate: Date,
-        endDate: Date,
-        document: Buffer
+        endDate: Date
     }],
     shifts: [{
         //0 is Sunday, 1 is Monday, 2 is Tuesday, etc.
@@ -88,10 +70,6 @@ const tutorProfileSchema = new mongoose.Schema({
         }
     }],
     scheduleExceptions: [scheduleExceptionSchema],
-    hourlyRate: {
-        type: Number,
-        min: 0
-    },
     status: { 
         type: String, 
         enum: ['active', 'inactive', 'suspended'],
@@ -113,12 +91,6 @@ const tutorProfileSchema = new mongoose.Schema({
             default: Date.now 
         }
     }],
-    preferences: {
-        maxWeeklyHours: { type: Number, default: 40 },
-        preferredSubjects: [String],
-        preferredLevels: [String],
-        notes: String
-    },
     assignedBlogs:Number,
     publishedBlogs:Number,
     creditBalance:{
