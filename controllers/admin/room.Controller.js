@@ -40,7 +40,7 @@ const RoomController = {
                 path: 'bookings.class',
             })
             .populate({
-                path: 'bookings.classsession',
+                path: 'bookings.classSession',
             });
             if (!room) {
                 return res.status(404).json({ message: 'Room not found' });
