@@ -142,9 +142,10 @@ const tutorController = {
           workHours: `${totalWorkHours.toFixed(2)} hours`,
           status: tutor.status,
           blogs: `${tutor.publishedBlogs || 0} blogs`,
-          credit: tutor.credit || "N/A",
+          credit: tutor.creditBalance || 0,
           education: tutor.education,
           subjects: tutor.subjects,
+
         };
       });
 
@@ -268,18 +269,43 @@ const tutorController = {
             res.status(500).json({ message: 'Error deleting tutor', error: error.message });
         }
     },
-    addShift : async (req, res) => {
+       addShift: async (req, res) => {
         try {
-            const  tutorId  = req.params.id;
+            const tutorId = req.params.id;
             const { shift } = req.body;
-           
+    
             console.log(tutorId);
-          
+    
             const tutor = await TutorProfile.findOne({ _id: tutorId });
             if (!tutor) {
                 return res.status(404).json({ message: 'Tutor not found' });
             }
-            if(!tutor.shifts){  tutor.shifts = [];}
+            if (!tutor.shifts) {
+                tutor.shifts = [];
+            }
+    
+            // Check for collision with existing shifts
+            const isCollision = tutor.shifts.some(existingShift => {
+                if (existingShift.dayOfWeek !== shift.dayOfWeek) {
+                    return false;
+                }
+                const [existingStartHour, existingStartMinute] = existingShift.startTime.split(':').map(Number);
+                const [existingEndHour, existingEndMinute] = existingShift.endTime.split(':').map(Number);
+                const [newStartHour, newStartMinute] = shift.startTime.split(':').map(Number);
+                const [newEndHour, newEndMinute] = shift.endTime.split(':').map(Number);
+    
+                const existingStartTime = existingStartHour * 60 + existingStartMinute;
+                const existingEndTime = existingEndHour * 60 + existingEndMinute;
+                const newStartTime = newStartHour * 60 + newStartMinute;
+                const newEndTime = newEndHour * 60 + newEndMinute;
+    
+                return (newStartTime < existingEndTime && newEndTime > existingStartTime);
+            });
+    
+            if (isCollision) {
+                return res.status(400).json({ message: 'Shift time conflicts with an existing shift' });
+            }
+    
             tutor.shifts.push(shift);
             await tutor.save();
             res.json({ message: 'Shift added successfully' });
@@ -320,16 +346,17 @@ const tutorController = {
     },
     AddBonus : async (req, res) => {
         try {
-            const { tutorId, bonus } = req.body;
+          const tutorId = req.params.id;
+            const { bonus } = req.body;
             if(!bonus.amount || !bonus.reason) {
                 return res.status(400).json({ message: 'Please provide amount and reason' });
             }
-            const tutor = await TutorProfile.findOne({ user: tutorId });
+            const tutor = await TutorProfile.findOne({ _id: tutorId }).populate('user');
             if (!tutor) {
                 return res.status(404).json({ message: 'Tutor not found' });
             }
             const newBonus = new Bonus ({
-                user: tutor.user,
+                user: tutor.user._id,
                 username: tutor.user.firstName + ' ' + tutor.user.lastName,
                 bonus: bonus.amount,
                 description: bonus.reason
@@ -394,6 +421,10 @@ const tutorController = {
             res.status(500).json({ message: 'Error updating bonus', error: error.message });
         }
     },
+    getBonuses : async (req, res) => {
+        const bonuses = await Bonus.find().populate('user');
+        return res.json(bonuses);
+    }
 
 
 
