@@ -1,42 +1,47 @@
-const TutorProfile = require('../../models/Tutor');
-const Bonus = require('../../models/Bonus');
-const User = require('../../models/User');
-const createLog = require('../../middleware/logger').createLog;
+const TutorProfile = require("../../models/Tutor");
+const Bonus = require("../../models/Bonus");
+const User = require("../../models/User");
+const createLog = require("../../middleware/logger").createLog;
 
-
-
-const bcrypt = require('bcryptjs');
+const bcrypt = require("bcryptjs");
 const tutorController = {
-    create: async (req, res) => {
-        try {
-            const email = req.body.email ? JSON.parse(req.body.email) : null;
-            const password = req.body.password ? JSON.parse(req.body.password) : null;
-            const name = req.body.name ? JSON.parse(req.body.name) : null;
-            const firstName = req.body.firstName ? JSON.parse(req.body.firstName) : null;
-            const lastName = req.body.lastName ? JSON.parse(req.body.lastName) : null;
-            const phone = req.body.phone ? JSON.parse(req.body.phone) : null;
-            const subjects = req.body.subjects ? JSON.parse(req.body.subjects) : null;
-            const category = req.body.category ? JSON.parse(req.body.category) : null;
-            const qualifications = req.body.qualifications ? JSON.parse(req.body.qualifications) : null;
-            const shifts = req.body.shifts ? JSON.parse(req.body.shifts) : null;
-            const degree = req.body.degree ? JSON.parse(req.body.degree) : null;
-            const university = req.body.university ? JSON.parse(req.body.university) : null;
-      
-            const startDate = req.body.startDate ? JSON.parse(req.body.startDate) : null;
-            const endDate = req.body.endDate ? JSON.parse(req.body.endDate) : null;
-            // Create user account
-            console.log(category);
-            const salt = await bcrypt.genSalt(10);
-            const hashedPassword = await bcrypt.hash(password, salt);
-            const newTutor = new User({
-                email,
-                password: hashedPassword,
-                role: 'tutor',
-                firstName,
-                lastName,
-                phone
-            });
+  create: async (req, res) => {
+    try {
+      const email = req.body.email ? JSON.parse(req.body.email) : null;
+      const password = req.body.password ? JSON.parse(req.body.password) : null;
+      const name = req.body.name ? JSON.parse(req.body.name) : null;
+      const firstName = req.body.firstName
+        ? JSON.parse(req.body.firstName)
+        : null;
+      const lastName = req.body.lastName ? JSON.parse(req.body.lastName) : null;
+      const phone = req.body.phone ? JSON.parse(req.body.phone) : null;
+      const subjects = req.body.subjects ? JSON.parse(req.body.subjects) : null;
+      const category = req.body.category ? JSON.parse(req.body.category) : null;
+      const qualifications = req.body.qualifications
+        ? JSON.parse(req.body.qualifications)
+        : null;
+      const shifts = req.body.shifts ? JSON.parse(req.body.shifts) : null;
+      const degree = req.body.degree ? JSON.parse(req.body.degree) : null;
+      const university = req.body.university
+        ? JSON.parse(req.body.university)
+        : null;
 
+      const startDate = req.body.startDate
+        ? JSON.parse(req.body.startDate)
+        : null;
+      const endDate = req.body.endDate ? JSON.parse(req.body.endDate) : null;
+      // Create user account
+      console.log(category);
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
+      const newTutor = new User({
+        email,
+        password: hashedPassword,
+        role: "tutor",
+        firstName,
+        lastName,
+        phone,
+      });
 
             
             await newTutor.save();
@@ -54,9 +59,9 @@ const tutorController = {
                 category
             });
 
-            await tutorProfile.save();
+      await tutorProfile.save();
 
-            await createLog('CREATE', 'TUTOR', newTutor._id, req.user, req);
+      await createLog("CREATE", "TUTOR", newTutor._id, req.user, req);
 
             res.status(200).json({
                 message: 'Tutor created successfully',
@@ -79,32 +84,32 @@ const tutorController = {
             const search = req.query.search || '';
             const status = req.query.status;
 
-            let query = {};
-            
-            // Build search query
-            if (search) {
-                const userQuery = {
-                    $or: [
-                        { firstName: { $regex: search, $options: 'i' } },
-                        { lastName: { $regex: search, $options: 'i' } },
-                        { email: { $regex: search, $options: 'i' } }
-                    ]
-                };
-                
-                // Find matching users first
-                const users = await User.find(userQuery).select('_id');
-                const userIds = users.map(user => user._id);
-                
-                query['user'] = { $in: userIds };
-            }
+      let query = {};
 
-            // Add status filter if provided
-            if (status) {
-                query['status'] = status;
-            }
+      // Build search query
+      if (search) {
+        const userQuery = {
+          $or: [
+            { firstName: { $regex: search, $options: "i" } },
+            { lastName: { $regex: search, $options: "i" } },
+            { email: { $regex: search, $options: "i" } },
+          ],
+        };
 
-            // Get total count for pagination
-            const total = await TutorProfile.countDocuments(query);
+        // Find matching users first
+        const users = await User.find(userQuery).select("_id");
+        const userIds = users.map((user) => user._id);
+
+        query["user"] = { $in: userIds };
+      }
+
+      // Add status filter if provided
+      if (status) {
+        query["status"] = status;
+      }
+
+      // Get total count for pagination
+      const total = await TutorProfile.countDocuments(query);
 
             // Get paginated tutor profiles with populated user data
             const tutors = await TutorProfile.find(query)
@@ -114,33 +119,36 @@ const tutorController = {
                 .sort({ createdAt: -1 });
             console.log(tutors);
 
-            // Transform the data for frontend
-            //calculate work hours for each week
+      // Transform the data for frontend
+      //calculate work hours for each week
 
-                        const transformedTutors = tutors.map(tutor => {
-                const totalWorkHours = tutor.shifts?.reduce((total, shift) => {
-                    const [startHour, startMinute] = shift.startTime.split(':').map(Number);
-                    const [endHour, endMinute] = shift.endTime.split(':').map(Number);
-                    const startTime = startHour + startMinute / 60;
-                    const endTime = endHour + endMinute / 60;
-                    return total + (endTime - startTime);
-                }, 0) || 0;
-            
-                return {
-                    id: tutor._id,
-                    name: `${tutor.user.firstName} ${tutor.user.lastName}`,
-                    email: tutor.user.email,
-                    initials: `${tutor.user.firstName[0]}${tutor.user.lastName[0]}`,
-                    workHours: `${totalWorkHours.toFixed(2)} hours`,
-                    status: tutor.status,
-                    blogs: `${tutor.publishedBlogs || 0} blogs`,
-                    credit: tutor.credit || 'N/A',
-                    education: tutor.education,
-                    subjects: tutor.subjects
-                };
-            });
+      const transformedTutors = tutors.map((tutor) => {
+        const totalWorkHours =
+          tutor.shifts?.reduce((total, shift) => {
+            const [startHour, startMinute] = shift.startTime
+              .split(":")
+              .map(Number);
+            const [endHour, endMinute] = shift.endTime.split(":").map(Number);
+            const startTime = startHour + startMinute / 60;
+            const endTime = endHour + endMinute / 60;
+            return total + (endTime - startTime);
+          }, 0) || 0;
 
-            await createLog('READ', 'TUTOR', null, req.user, req);
+        return {
+          id: tutor._id,
+          name: `${tutor.user.firstName} ${tutor.user.lastName}`,
+          email: tutor.user.email,
+          initials: `${tutor.user.firstName[0]}${tutor.user.lastName[0]}`,
+          workHours: `${totalWorkHours.toFixed(2)} hours`,
+          status: tutor.status,
+          blogs: `${tutor.publishedBlogs || 0} blogs`,
+          credit: tutor.credit || "N/A",
+          education: tutor.education,
+          subjects: tutor.subjects,
+        };
+      });
+
+      await createLog("READ", "TUTOR", null, req.user, req);
 
             res.json({
                 tutors: transformedTutors,
@@ -160,84 +168,100 @@ const tutorController = {
         }
     },
 
-    getById: async (req, res) => {
-        try {
-            console.log(req.params)
-            const tutor = await TutorProfile.findById(req.params.id)
-                .populate('user', '-password');
+  getById: async (req, res) => {
+    try {
+      console.log(req.params);
+      const tutor = await TutorProfile.findById(req.params.id).populate(
+        "user",
+        "-password"
+      );
 
-            if (!tutor) {
-                return res.status(404).json({ message: 'Tutor not found' });
-            }
-            const totalWorkHours = tutor.shifts?.reduce((total, shift) => {
-                const [startHour, startMinute] = shift.startTime.split(':').map(Number);
-                const [endHour, endMinute] = shift.endTime.split(':').map(Number);
-                const startTime = startHour + startMinute / 60;
-                const endTime = endHour + endMinute / 60;
-                return total + (endTime - startTime);
-            }, 0) || 0;
-            //return the work hours aswell
-            const response = {
-                data:{
-                    tutor,
-                    "workHours":totalWorkHours
-                }
-            }
+      if (!tutor) {
+        return res.status(404).json({ message: "Tutor not found" });
+      }
+      const totalWorkHours =
+        tutor.shifts?.reduce((total, shift) => {
+          const [startHour, startMinute] = shift.startTime
+            .split(":")
+            .map(Number);
+          const [endHour, endMinute] = shift.endTime.split(":").map(Number);
+          const startTime = startHour + startMinute / 60;
+          const endTime = endHour + endMinute / 60;
+          return total + (endTime - startTime);
+        }, 0) || 0;
+      //return the work hours aswell
+      const response = {
+        data: {
+          tutor,
+          workHours: totalWorkHours,
+        },
+      };
 
+      await createLog("READ", "TUTOR", tutor._id, req.user, req);
 
-            await createLog('READ', 'TUTOR', tutor._id, req.user, req);
+      res.json(response);
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: "Error fetching tutor", error: error.message });
+    }
+  },
 
-            res.json(response);
-        } catch (error) {
-            res.status(500).json({ message: 'Error fetching tutor', error: error.message });
-        }
-    },
+  update: async (req, res) => {
+    try {
+      const {
+        subjects,
+        qualifications,
+        defaultSchedule,
+        assignedBlogs,
+        publishedBlogs,
+        status,
+      } = req.body;
 
-    update: async (req, res) => {
-        try {
-            const { subjects, qualifications, defaultSchedule,assignedBlogs,publishedBlogs,status } = req.body;
-            
-            const updateData = {};
-            if (subjects) updateData.subjects = subjects;
-            if (qualifications) updateData.qualifications = qualifications;
-            if (defaultSchedule) updateData.defaultSchedule = defaultSchedule;
-            if(assignedBlogs) updateData.assignedBlogs = assignedBlogs;
-            if(publishedBlogs) updateData.publishedBlogs = publishedBlogs;
-            if(status) updateData.status = status;
-            const tutorProfile = await TutorProfile.findOneAndUpdate(
-                {_id:req.params.id},
-                updateData,
-                { new: true }
-            
-            ).populate('user', '-password');
+      const updateData = {};
+      if (subjects) updateData.subjects = subjects;
+      if (qualifications) updateData.qualifications = qualifications;
+      if (defaultSchedule) updateData.defaultSchedule = defaultSchedule;
+      if (assignedBlogs) updateData.assignedBlogs = assignedBlogs;
+      if (publishedBlogs) updateData.publishedBlogs = publishedBlogs;
+      if (status) updateData.status = status;
+      const tutorProfile = await TutorProfile.findOneAndUpdate(
+        { _id: req.params.id },
+        updateData,
+        { new: true }
+      ).populate("user", "-password");
 
-            if (!tutorProfile) {
-                return res.status(404).json({ message: 'Tutor not found' });
-            }
+      if (!tutorProfile) {
+        return res.status(404).json({ message: "Tutor not found" });
+      }
 
-            await createLog('UPDATE', 'TUTOR', tutorProfile._id, req.user, req);
+      await createLog("UPDATE", "TUTOR", tutorProfile._id, req.user, req);
 
-            res.json({
-                message: 'Tutor updated successfully',
-                tutor: tutorProfile
-            });
-        } catch (error) {
-            res.status(500).json({ message: 'Error updating tutor', error: error.message });
-        }
-    },
+      res.json({
+        message: "Tutor updated successfully",
+        tutor: tutorProfile,
+      });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: "Error updating tutor", error: error.message });
+    }
+  },
 
-    delete: async (req, res) => {
-        try {
-            // Delete tutor profile
-            const tutorProfile = await TutorProfile.findOneAndDelete({ user: req.params.id });
-            if (!tutorProfile) {
-                return res.status(404).json({ message: 'Tutor not found' });
-            }
+  delete: async (req, res) => {
+    try {
+      // Delete tutor profile
+      const tutorProfile = await TutorProfile.findOneAndDelete({
+        user: req.params.id,
+      });
+      if (!tutorProfile) {
+        return res.status(404).json({ message: "Tutor not found" });
+      }
 
-            // Delete user account
-            await User.findByIdAndDelete(req.params.id);
+      // Delete user account
+      await User.findByIdAndDelete(req.params.id);
 
-            await createLog('DELETE', 'TUTOR', tutorProfile._id, req.user, req);
+      await createLog("DELETE", "TUTOR", tutorProfile._id, req.user, req);
 
             res.json({ message: 'Tutor deleted successfully' });
         } catch (error) {
