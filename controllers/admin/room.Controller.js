@@ -1,6 +1,7 @@
 const Room= require('../../models/Room');
 const Class= require('../../models/Class');
 const User= require('../../models/User');
+const ClassSession = require('../../models/ClassSession');
 
 
 const RoomController = {
@@ -19,7 +20,13 @@ const RoomController = {
     },
     GetAllRooms: async (req, res) => {
         try {
-            const rooms = await Room.find();
+            const rooms = await Room.find()
+                .populate({
+                    path: 'bookings.class',
+                })
+                .populate({
+                    path: 'bookings.classSession',
+                });
             res.json(rooms);
         } catch (error) {
             res.status(500).json({ message: 'Error fetching rooms', error: error.message });
@@ -29,9 +36,12 @@ const RoomController = {
         try {
             const
             { id } = req.params;    
-            const room = await Room.findById(id)
-            .populate('bookings.user', 'firstName lastName email')
-            .populate('bookings.class');
+            const room = await Room.findById(id) .populate({
+                path: 'bookings.class',
+            })
+            .populate({
+                path: 'bookings.classsession',
+            });
             if (!room) {
                 return res.status(404).json({ message: 'Room not found' });
             }
@@ -68,7 +78,7 @@ const RoomController = {
     AddBooking: async (req, res) => {
         try {
             const { id } = req.params;
-            const { date, startTime, endTime, classId } = req.body;
+            const { date, startTime, endTime, classId,classSessionId,description } = req.body;
             const room = await Room.findById(id);
             if (!room) {
                 return res.status(404).json({ message: 'Room not found' });
@@ -90,7 +100,9 @@ const RoomController = {
                 date,
                 startTime,
                 endTime,
-                class: classId
+                class: classId,
+                classSession:classSessionId,
+                description
             };
             room.bookings.push(booking);
             await room.save();
@@ -150,3 +162,4 @@ const RoomController = {
         }
     }
 };
+module.exports = RoomController;
