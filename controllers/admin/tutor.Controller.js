@@ -248,15 +248,14 @@ const tutorController = {
         try {
             const  tutorId  = req.params.id;
             const { shift } = req.body;
-            console.log(shift);
+           
             console.log(tutorId);
-            if(!shift.dayOfWeek || !shift.startTime || !shift.endTime) {
-                return res.status(400).json({ message: 'Please provide day of week, start time and end time' });
-            }
-            const tutor = await TutorProfile.findOne({ user: tutorId });
+          
+            const tutor = await TutorProfile.findOne({ _id: tutorId });
             if (!tutor) {
                 return res.status(404).json({ message: 'Tutor not found' });
             }
+            if(!tutor.shifts){  tutor.shifts = [];}
             tutor.shifts.push(shift);
             await tutor.save();
             res.json({ message: 'Shift added successfully' });
@@ -267,8 +266,8 @@ const tutorController = {
     removeShift : async (req, res) => {
         try {
             const  tutorId  = req.params.id;
-            const {  shiftId } = req.body;
-            const tutor = await TutorProfile.findOne({ user: tutorId });
+            const shiftId =req.params.shiftId;
+            const tutor = await TutorProfile.findOne({ _id: tutorId });
             if (!tutor) {
                 return res.status(404).json({ message: 'Tutor not found' });
             }

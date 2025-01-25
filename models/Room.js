@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+
 const RoomSchema = new mongoose.Schema({
     name:{
         type:String,
@@ -10,10 +11,6 @@ const RoomSchema = new mongoose.Schema({
         required:true
     },
     bookings:[{
-        user:{
-            type:mongoose.Schema.Types.ObjectId,
-            ref:'User'
-        },
         date:{
             type:Date,
             required:true
@@ -29,6 +26,13 @@ const RoomSchema = new mongoose.Schema({
         class:{
             type:mongoose.Schema.Types.ObjectId,
             ref:'Class'
+        },
+        classSession:{
+            type:mongoose.Schema.Types.ObjectId,
+            ref:'ClassSession'
+        },
+        description:{
+            type:String
         }
     }],
     createdAt:{
@@ -36,3 +40,5 @@ const RoomSchema = new mongoose.Schema({
         default:Date.now
     }
 });
+const Room = mongoose.model('Room', RoomSchema);
+module.exports = Room;

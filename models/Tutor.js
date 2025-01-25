@@ -50,7 +50,8 @@ const tutorProfileSchema = new mongoose.Schema({
         startDate: Date,
         endDate: Date
     }],
-    shifts: [{
+    shifts: {
+        type:[{
         //0 is Sunday, 1 is Monday, 2 is Tuesday, etc.
         dayOfWeek: { 
             type: Number, 
@@ -68,7 +69,7 @@ const tutorProfileSchema = new mongoose.Schema({
             required: true,
             match: /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/
         }
-    }],
+    }],default:[]},
     scheduleExceptions: [scheduleExceptionSchema],
     status: { 
         type: String, 
