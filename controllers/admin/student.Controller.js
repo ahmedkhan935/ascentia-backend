@@ -85,7 +85,7 @@ const studentController = {
             for (let i = 0; i < Students.length; i++) {
                 let student = Students[i];
                 
-                let classes = await Class.find({ students: { $in: [student._id] } }).select('-students');
+                let classes = await Class.find({ 'students.id': student._id }).select('-students');
                 const family = await Family.findOne({ students: { $in: [student._id] } }).select('-_id');   
                 const Payments = await Payment.find({
                     $or: [

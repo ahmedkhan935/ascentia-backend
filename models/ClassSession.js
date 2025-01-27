@@ -15,6 +15,7 @@ const classSessionSchema = new mongoose.Schema({
       markedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       markedAt: Date,
     }],
+    room: { type: mongoose.Schema.Types.ObjectId, ref: 'Room' },
     cancellationReason: String,
     cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     cancelledAt: Date,
