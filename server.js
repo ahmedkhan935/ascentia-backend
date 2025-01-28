@@ -1,18 +1,21 @@
-const express = require('express');
+const express = require("express");
 const app = express();
-const cors = require('cors');
-const router = require('./routes/index');
-const dotenv = require('dotenv');
-const connectDB = require('./utils/db');
+const cors = require("cors");
+const router = require("./routes/index");
+const dotenv = require("dotenv");
+const connectDB = require("./utils/db");
 
 dotenv.config();
 const port = process.env.PORT || 5000;
-const MODE = process.env.MODE || 'local'; 
+const MODE = process.env.MODE || "local";
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use('/api', router);
+app.use("/api", router);
+app.get("/", (req, res) => {
+  res.send("Hello to the Ascentia API");
+});
 
 // Store server instance
 let server;
@@ -26,16 +29,16 @@ const startServer = async () => {
     });
 
     // Handle server shutdown
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-    process.on('uncaughtException', (error) => {
-      console.log('Uncaught Exception:', error);
-      console.error('Uncaught Exception:', error);
-      gracefulShutdown('uncaughtException');
+    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+    process.on("uncaughtException", (error) => {
+      console.log("Uncaught Exception:", error);
+      console.error("Uncaught Exception:", error);
+      gracefulShutdown("uncaughtException");
     });
-    process.on('SIGUSR2', () => gracefulShutdown('SIGUSR2'));
+    process.on("SIGUSR2", () => gracefulShutdown("SIGUSR2"));
   } catch (error) {
-    console.error('Failed to start server:', error);
+    console.error("Failed to start server:", error);
     process.exit(1);
   }
 };
@@ -43,16 +46,18 @@ const startServer = async () => {
 // Graceful shutdown function
 const gracefulShutdown = async (signal) => {
   console.log(`Received ${signal}. Starting graceful shutdown...`);
-  
+
   if (server) {
     server.close(() => {
-      console.log('Server closed');
+      console.log("Server closed");
       process.exit(0);
     });
 
     // Force close after 10 seconds
     setTimeout(() => {
-      console.error('Could not close connections in time, forcefully shutting down');
+      console.error(
+        "Could not close connections in time, forcefully shutting down"
+      );
       process.exit(1);
     }, 10000);
   } else {
