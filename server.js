@@ -7,6 +7,7 @@ const connectDB = require('./utils/db');
 
 dotenv.config();
 const port = process.env.PORT || 5000;
+const MODE = process.env.MODE || 'local'; 
 
 // Middleware
 app.use(cors());
@@ -19,7 +20,7 @@ let server;
 // Connect to database and start server
 const startServer = async () => {
   try {
-    await connectDB("local");
+    await connectDB(MODE);
     server = app.listen(port, () => {
       console.log(`Server is running on port ${port}`);
     });
