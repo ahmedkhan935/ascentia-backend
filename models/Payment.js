@@ -32,8 +32,7 @@ const paymentSchema = new mongoose.Schema({
     },
     paymentMethod:{
         type:String,
-        enum:["stripe","bpay"],
-        required:true
+        enum:["stripe","bpay"]
     },
   });
 

@@ -3,6 +3,7 @@ const Class = require('../../models/Class');
 const User = require('../../models/User');
 const ClassSession = require('../../models/ClassSession');
 const Room = require('../../models/Room');
+const Payment = require('../../models/Payment');
 
 // Helper function to check if a room is available for a specific time slot
 async function checkRoomAvailability(roomId, date, startTime, endTime) {
@@ -130,6 +131,33 @@ const ClassController = {
                     generatedSessions.push(classSession);
                 }
             }
+            console.log("here");
+            //add entries in payment table
+            const payments = [];
+            console.log(students);
+            for (const student of students) {
+                const payment = new Payment({
+                    user: student.id,
+                    amount: student.price,
+                    class: savedClass._id,
+                    status: 'pending',
+                    type: 'Payment',
+                });
+                await payment.save();
+                payments.push(payment);
+            }
+            console.log("here");
+            
+            const tutorPayment = new Payment({
+                user: tutor,
+                amount: tutorPayout,
+                class: savedClass._id,
+                status: 'pending',
+                type: 'Payout',
+            });
+            await tutorPayment.save();
+            console.log("here");
+
             
             res.status(201).json({
                 status: "success",

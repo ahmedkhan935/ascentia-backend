@@ -25,7 +25,7 @@ const classSchema = new mongoose.Schema({
   tutor: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   students: [{ type:{
     id: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    paymentAmount: Number,
+    price: Number,
     paymentStatus: { type: String, enum: ["paid", "pending"], default: "pending" },
   } }],
   status: {
