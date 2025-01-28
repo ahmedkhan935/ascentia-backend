@@ -34,6 +34,10 @@ const paymentSchema = new mongoose.Schema({
         type:String,
         enum:["stripe","bpay"]
     },
+    createdAt:{
+        type:Date,
+        default:Date.now()
+    }
   });
 
 const Payment = mongoose.model('Payment', paymentSchema);   

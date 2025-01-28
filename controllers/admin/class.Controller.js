@@ -169,7 +169,98 @@ const ClassController = {
         } catch (error) {
             res.status(400).json({ message: error.message, status: "failed" });
         }
+    },
+    getAllSessions : async (req, res) => {
+        try {
+            const sessions = await ClassSession.find().populate('class').populate('room');
+
+            res.status(200).json({ sessions, status: "success" });
+        } catch (error) {
+            res.status(500).json({ message: 'Error fetching sessions', error: error.message, status: "Error" });
+        }
+    },
+    assignRoomToSession : async (req,res) => {
+        try
+        {
+            const {roomId,sessionId} = req.body;
+            const session = await ClassSession.findById(sessionId);
+            if(!session)
+            {
+                return res.status(404).json({ message: 'Session not found', status: "failed" });
+            }
+            //check if already assigned a room if yes then remove the booking from that room
+            if(session.room)
+            {
+                const room = await Room.findById(session.room);
+                const bookingIndex = room.bookings.findIndex(booking => booking.classSession.toString() === sessionId);
+                await Room.findByIdAndUpdate(session.room, {
+                    $pull: {
+                        bookings: room.bookings[bookingIndex]
+                    }
+                });
+            }
+            const room = await Room.findById(roomId);
+            if(!room)
+            {
+                return res.status(404).json({ message: 'Room not found', status: "failed" });
+            }
+            const isRoomAvailable = await checkRoomAvailability(roomId, session.date, session.startTime, session.endTime);
+            if(!isRoomAvailable)
+            {
+                return res.status(400).json({ message: 'Room not available for this time slot', status: "failed" });
+            }
+            await Room.findByIdAndUpdate(roomId, {
+                $push: {
+                    bookings: {
+                        date: session.date,
+                        startTime: session.startTime,
+                        endTime: session.endTime,
+                        class: session.class,
+                        classSession: session._id
+                    }
+                }
+            });
+            await ClassSession.findByIdAndUpdate(sessionId,{room:roomId});
+            res.status(200).json({ message: 'Room assigned to session', status: "success" });
+        }
+        catch(error)
+        {
+            res.status(500).json({ message: 'Error assigning room to session', error: error.message, status: "Error" });
+        }
+    },
+    unassignRoomFromSession : async (req,res) => {
+        try
+        {
+    const {sessionId} = req.body;
+    const session = await ClassSession.findById(sessionId);
+    if(!session)
+    {
+        return res.status(404).json({ message: 'Session not found', status: "failed" });
     }
+    if(!session.room)
+    {
+        return res.status(400).json({ message: 'Session is not assigned to any room', status: "failed" });
+    }
+    //remove the booking from room 
+    const room = await Room.findById(session.room);
+    const bookingIndex = room.bookings.findIndex(booking => booking.classSession.toString() === sessionId);
+    const updatedRoom = await Room.findByIdAndUpdate(session.room, {
+        $pull: {
+            bookings: room.bookings[bookingIndex]
+        }
+    });
+
+    const updatedSession = await ClassSession.findByIdAndUpdate(sessionId,{room:null});
+    res.status(200).json({ message: 'Room unassigned from session', status: "success" });   
+}
+catch(error)
+{
+    res.status(500).json({ message: 'Error unassigning room from session', error: error.message, status: "Error" });
+}
+    
+
+    },
 };
+
 
 module.exports = ClassController;
