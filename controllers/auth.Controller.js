@@ -231,7 +231,51 @@ const authController = {
 
 
         }
+    },
+    updateUser: async (req, res) => {
+        const { firstName, lastName, email, dateOfBirth } = req.body;
+        let updateDate = {};
+        if(firstName) {
+            updateDate.firstName = firstName;
+        }
+        if(lastName) {
+            updateDate.lastName = lastName;
+        }
+        if(email) {
+            updateDate.email = email;
+        }
+        if(dateOfBirth) {
+            updateDate.dateOfBirth = dateOfBirth;
+        }
+        try {
+            const user=await User.findOneAndUpdate(
+                {_id:req.user._id},
+                updateDate,
+                {new:true}
+            );
+            if(!user){
+                return res.status(404).json({message:'User not found'});
+            }
+            res.json({message:'User updated successfully',user});
+        }
+        catch(error){
+            res.status(500).json({message:'Error updating user',error:error.message});
+        }
+    },
+    getUser: async (req, res) => {
+        try {
+            const user = await User.findById(req.user._id);
+            if (!user) {
+                return res.status(404).json({ message: 'User not found' });
+            }
+            res.json(user);
+        } catch (error) {
+            res.status(500).json({ message: 'Error fetching user', error: error.message });
+        }
     }
+    
+
+
     
 
 };
