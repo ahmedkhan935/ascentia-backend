@@ -48,6 +48,9 @@ function generateSessionDates(startDate, endDate, dayOfWeek) {
 
   // Ensure we're working with date objects
   const endDateTime = new Date(endDate);
+  console.log(endDateTime);
+  console.log(startDate);
+
 
   while (currentDate <= endDateTime) {
     if (currentDate.getDay() === parseInt(dayOfWeek)) {
@@ -83,22 +86,35 @@ const checkTutorAvailability = async (tutorId, date, startTime, endTime) => {
   // Get all sessions for these classes
   const existingSessions = await ClassSession.find({
     class: { $in: existingClasses.map((c) => c._id) },
-    date: date,
-    status: { $in: ["scheduled", "completed"] },
+    $expr: {
+      $eq: [
+          { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
+          { $dateToString: { format: "%Y-%m-%d", date: new Date(date) } }
+      ]
+  },
+    status: { $in: ["scheduled"] },
   });
+ 
 
   // Check for time conflicts
   for (const session of existingSessions) {
-    const sessionStart = session.startTime;
+       const sessionStart = session.startTime;
     const sessionEnd = session.endTime;
-
+    
+    // Convert all times to minutes for easier comparison
+    const [startHour, startMin] = startTime.split(":").map(Number);
+    const [endHour, endMin] = endTime.split(":").map(Number);
+    const [sessionStartHour, sessionStartMin] = sessionStart.split(":").map(Number);
+    const [sessionEndHour, sessionEndMin] = sessionEnd.split(":").map(Number);
+    
+    const newStartTime = startHour * 60 + startMin;
+    const newEndTime = endHour * 60 + endMin;
+    const existingStartTime = sessionStartHour * 60 + sessionStartMin;
+    const existingEndTime = sessionEndHour * 60 + sessionEndMin;
+    
     // Check if the new time slot overlaps with existing session
-    if (
-      (startTime >= sessionStart && startTime < sessionEnd) ||
-      (endTime > sessionStart && endTime <= sessionEnd) ||
-      (startTime <= sessionStart && endTime >= sessionEnd)
-    ) {
-      return false;
+    if (newStartTime < existingEndTime && newEndTime > existingStartTime) {
+        return false;
     }
   }
 
@@ -145,83 +161,7 @@ async function createClassSession(classId, date, startTime, endTime, roomId) {
 }
 
 const ClassController = {
-  // async createClass(req, res) {
-  //     try {
-  //         const { subject, price, tutor, students, sessions, room, frequency, tutorPayout, startDate, endDate } = req.body;
-  //         const type = students.length > 1 ? "group" : "individual";
 
-  //         // Create the class
-  //         const newClass = new Class({
-  //             subject,
-  //             price,
-  //             tutor,
-  //             students,
-  //             sessions,
-  //             allocatedRoom: room,
-  //             frequency,
-  //             tutorPayout,
-  //             startDate,
-  //             endDate,
-  //             type
-  //         });
-
-  //         const savedClass = await newClass.save();
-
-  //         // Generate sessions for each scheduled day
-  //         const generatedSessions = [];
-  //         for (const session of sessions) {
-  //             const sessionDates = generateSessionDates(startDate, endDate, session.dayOfWeek);
-
-  //             // Create a session for each date
-  //             for (const date of sessionDates) {
-  //                 const classSession = await createClassSession(
-  //                     savedClass._id,
-  //                     date,
-  //                     session.startTime,
-  //                     session.endTime,
-  //                     room
-  //                 );
-  //                 generatedSessions.push(classSession);
-  //             }
-  //         }
-  //         console.log("here");
-  //         //add entries in payment table
-  //         const payments = [];
-  //         console.log(students);
-  //         for (const student of students) {
-  //             const payment = new Payment({
-  //                 user: student.id,
-  //                 amount: student.price,
-  //                 class: savedClass._id,
-  //                 status: 'pending',
-  //                 type: 'Payment',
-  //             });
-  //             await payment.save();
-  //             payments.push(payment);
-  //         }
-  //         console.log("here");
-
-  //         const tutorPayment = new Payment({
-  //             user: tutor,
-  //             amount: tutorPayout,
-  //             class: savedClass._id,
-  //             status: 'pending',
-  //             type: 'Payout',
-  //         });
-  //         await tutorPayment.save();
-  //         console.log("here");
-
-  //         res.status(201).json({
-  //             status: "success",
-  //             data: {
-  //                 class: savedClass,
-  //                 sessions: generatedSessions
-  //             }
-  //         });
-  //     } catch (error) {
-  //         res.status(400).json({ message: error.message, status: "failed" });
-  //     }
-  // },
   async createClass(req, res) {
     try {
       const {
@@ -237,6 +177,14 @@ const ClassController = {
         endDate,
       } = req.body;
       const type = students.length > 1 ? "group" : "individual";
+      if(startDate>endDate)
+      {
+        return res.status(400).json({
+          status: "failed",
+          message: "Start date cannot be greater than end date",
+          
+        });
+      }
 
       // Get tutor's shifts
       const tutorProfile = await Tutor.findOne({ _id: tutor });
@@ -249,8 +197,7 @@ const ClassController = {
 
       // Validate each session against tutor's shifts
       for (const session of sessions) {
-        console.log(session);
-        console.log(tutorProfile.shifts);
+       
         const dayShifts = tutorProfile.shifts.filter(
           (shift) => shift.dayOfWeek == session.dayOfWeek
         );
@@ -305,6 +252,7 @@ const ClassController = {
           endDate,
           session.dayOfWeek
         );
+        console.log(sessionDates);
 
         // Check availability for each date
         for (const date of sessionDates) {
@@ -375,7 +323,196 @@ const ClassController = {
       res.status(400).json({ message: error.message, status: "failed" });
     }
   },
+  addSession: async (req, res) => {
+    try {
+      const { classId, dayOfWeek, startTime, endTime} = req.body;
+      const exsistingClass = await Class.findById(classId);
+      if (!exsistingClass){
+        return res
+          .status(404)
+          .json({ message: "Class not found", status: "failed" });
+      }
+      const tutorProfile = await Tutor.findOne({ _id: exsistingClass.tutor });
+      if (!tutorProfile) {
+        return res.status(400).json({
+          status: "failed",
+          message: "Tutor profile not found",
+        });
+      }
+      const dayShifts = tutorProfile.shifts.filter(
+        (shift) => shift.dayOfWeek == dayOfWeek
+      );
+      if(dayShifts.length === 0){
+        return res.status(400).json({
+          status: "failed",
+          message: `Tutor is not available on day ${dayOfWeek}`,
+        });
+      }
+      const isTimeValid = dayShifts.some(
+        (shift) =>
+          isTimeWithinShift(
+            startTime,
+            shift.startTime,
+            shift.endTime
+          ) &&
+          isTimeWithinShift(endTime, shift.startTime, shift.endTime)
+      );
 
+      if (!isTimeValid) {
+        return res.status(400).json({
+          status: "failed",
+          message: `Session time ${startTime}-${endTime} is outside tutor's availability`,
+        });
+      }
+
+      //now check tutor conflicts
+      
+      
+
+      exsistingClass.sessions.push({
+        dayOfWeek,
+        startTime,
+        endTime,
+      });
+      await exsistingClass.save();
+      //now create sessions for each date
+      const generatedSessions = [];
+      const startOfDay = new Date(new Date().toISOString().slice(0, 10));
+      console.log(startOfDay);
+    
+      const sessionDates = generateSessionDates(
+      //current dates,
+        startOfDay,
+        exsistingClass.endDate,
+        dayOfWeek
+      );
+      //check availability for each date
+      console.log(sessionDates);
+      for (const date of sessionDates) {
+        const isAvailable = await checkTutorAvailability(
+          exsistingClass.tutor,
+          date,
+          startTime,
+          endTime
+        );
+        if (!isAvailable) {
+          return res.status(400).json({
+            status: "failed",
+            message: `Tutor has a scheduling conflict on ${
+              date.toISOString().split("T")[0]
+            } at ${startTime}-${endTime}`,
+          });
+        }
+
+        const classSession = await createClassSession(
+          classId,
+          date,
+          startTime,
+          endTime,
+          exsistingClass.allocatedRoom
+        );
+        generatedSessions.push(classSession);
+      }
+
+
+      res.status(201).json({ generatedSessions, status: "success" });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error creating session",
+        error: error.message,
+        status: "Error",
+      });
+    }
+  },
+  deleteSession: async (req, res) => {
+    try {
+      const {classId, sessionId } = req.body;
+      const exsistingClass = await Class.findById(classId);
+      if (!exsistingClass){
+        return res
+          .status(404)
+          .json({ message: "Class not found", status: "failed" });
+      }
+      const sessionIndex = exsistingClass.sessions.findIndex(
+        (session) => session._id.toString() === sessionId
+      );
+      if (sessionIndex < 0) {
+        return res
+          .status(404)
+          .json({ message: "Session not found", status: "failed" });
+      }
+      const startOfDay = new Date(new Date().toISOString().slice(0, 10));
+      console.log(startOfDay);
+    
+      
+      const sessionDates = generateSessionDates(startOfDay, exsistingClass.endDate, exsistingClass.sessions[sessionIndex].dayOfWeek);
+      console.log(sessionDates);
+      sessionDates.forEach(async (date) => {
+              const session = await ClassSession.findOne({
+            class: classId,
+            $expr: {
+                $eq: [
+                    { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
+                    { $dateToString: { format: "%Y-%m-%d", date: new Date(date) } }
+                ]
+            },
+            startTime: exsistingClass.sessions[sessionIndex].startTime,
+            endTime: exsistingClass.sessions[sessionIndex].endTime,
+        });
+        if (session) {
+          await Room.findByIdAndUpdate(session.room, {
+            $pull: {
+              bookings: {
+                date: session.date,
+                startTime: session.startTime,
+                endTime: session.endTime,
+                class: session.class,
+                classSession: session._id,
+              },
+            },
+          });
+          await ClassSession.findByIdAndDelete(session._id);
+        }
+      });
+      //now pull
+      exsistingClass.sessions.splice(sessionIndex, 1);
+      await exsistingClass.save();
+      res.status(200).json({ status: "success", message: "Session deleted" });
+
+      //now remove all sessions for this date
+      
+    }
+    catch (error) {
+      res.status(500).json({
+        message: "Error deleting session",
+        error: error.message,
+        status: "Error",
+      });
+    }
+  },
+
+  getClasses: async (req, res) => {
+    try {
+      const classes = await Class.find()
+        .populate({
+          path:"tutor",
+          populate:{
+            path:"user",
+            select:"firstName lastName email"
+        }
+        })
+        .populate("students.id")
+        .populate("allocatedRoom");
+        
+      res.status(200).json({ classes, status: "success" });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error fetching classes",
+        error: error.message,
+        status: "Error",
+      });
+    }
+  },
   getAllSessions: async (req, res) => {
     try {
       const sessions = await ClassSession.find()

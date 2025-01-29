@@ -10,6 +10,11 @@ const studentController = {
         try {
             const student = req.body.student?JSON.parse(req.body.student):req.body;
             console.log(student);
+            const existingUser = await User.findOne({ email: student.email });
+            if (existingUser) {
+                return res.status(400).json({ status:"Error",message: 'User with this email already exists' });
+            }
+            
 
           
 

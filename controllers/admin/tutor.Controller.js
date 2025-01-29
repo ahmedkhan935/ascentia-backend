@@ -30,7 +30,15 @@ const tutorController = {
         ? JSON.parse(req.body.startDate)
         : null;
       const endDate = req.body.endDate ? JSON.parse(req.body.endDate) : null;
-      // Create user account
+      const exsistingUser = await User.findOne({
+        email: email,
+      });
+      if (exsistingUser) {
+        return res.status(400).json({
+          status: "Error",
+          message: "User with this email already exists",
+        });
+      }
       console.log(category);
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);

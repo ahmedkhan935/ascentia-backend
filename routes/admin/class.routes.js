@@ -6,6 +6,7 @@ router.post('/', [authenticateJWT,isAdmin],ClassController.createClass);
 router.get('/sessions', [authenticateJWT,isAdmin],ClassController.getAllSessions);
 router.put('/assign-room', [authenticateJWT,isAdmin],ClassController.assignRoomToSession);
 router.put('/unassign-room',[authenticateJWT,isAdmin],ClassController.unassignRoomFromSession);
-
-
+router.get('/', [authenticateJWT,isAdmin],ClassController.getClasses);
+router.post('/session', [authenticateJWT,isAdmin],ClassController.addSession);
+router.post('/session-remove', [authenticateJWT,isAdmin],ClassController.deleteSession);
 module.exports = router;

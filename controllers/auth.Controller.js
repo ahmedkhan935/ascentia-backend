@@ -12,7 +12,7 @@ const authController = {
             // Check if admin already exists
             const existingUser = await User.findOne({ email });
             if (existingUser) {
-                return res.status(400).json({ message: 'User already exists' });
+                return res.status(400).json({ status:"Error",message: 'User with this email already exists' });
             }
 
             // Hash password
