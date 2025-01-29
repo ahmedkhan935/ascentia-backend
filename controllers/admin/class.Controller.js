@@ -48,6 +48,9 @@ function generateSessionDates(startDate, endDate, dayOfWeek) {
 
   // Ensure we're working with date objects
   const endDateTime = new Date(endDate);
+  console.log(endDateTime);
+  console.log(startDate);
+
 
   while (currentDate <= endDateTime) {
     if (currentDate.getDay() === parseInt(dayOfWeek)) {
@@ -374,18 +377,17 @@ const ClassController = {
       await exsistingClass.save();
       //now create sessions for each date
       const generatedSessions = [];
-      let todayDate = new Date();
-      todayDate.setHours(0, 0, 0, 0);
-
+      const startOfDay = new Date(new Date().toISOString().slice(0, 10));
+      console.log(startOfDay);
     
       const sessionDates = generateSessionDates(
       //current dates,
-        exsistingClass.startDate,
+        startOfDay,
         exsistingClass.endDate,
         dayOfWeek
       );
       //check availability for each date
-
+      console.log(sessionDates);
       for (const date of sessionDates) {
         const isAvailable = await checkTutorAvailability(
           exsistingClass.tutor,
@@ -439,8 +441,11 @@ const ClassController = {
           .status(404)
           .json({ message: "Session not found", status: "failed" });
       }
+      const startOfDay = new Date(new Date().toISOString().slice(0, 10));
+      console.log(startOfDay);
+    
       
-      const sessionDates = generateSessionDates(exsistingClass.startDate, exsistingClass.endDate, exsistingClass.sessions[sessionIndex].dayOfWeek);
+      const sessionDates = generateSessionDates(startOfDay, exsistingClass.endDate, exsistingClass.sessions[sessionIndex].dayOfWeek);
       console.log(sessionDates);
       sessionDates.forEach(async (date) => {
               const session = await ClassSession.findOne({
