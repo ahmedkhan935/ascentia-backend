@@ -7,11 +7,7 @@ const classSchema = new mongoose.Schema({
     Monthly: Number,
     TermWise: Number,
   },
-  tutorPayout: {
-    perClass: Number,
-    Monthly: Number,
-    TermWise: Number,
-  },
+  tutorPayout: Number,
   sessions:{type:[{
     dayOfWeek:Number,
     startTime:String,
@@ -22,7 +18,7 @@ const classSchema = new mongoose.Schema({
   frequency: { type: String },
 
 
-  tutor: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  tutor: { type: mongoose.Schema.Types.ObjectId, ref: "TutorProfile", required: true },
   students: [{ type:{
     id: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     price: Number,

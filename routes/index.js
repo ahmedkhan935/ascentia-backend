@@ -9,6 +9,8 @@ const tutorRoutes = require('./admin/tutor.routes');
 const roomRoutes = require('./admin/room.routes');
 const familyRoutes = require('./admin/family.routes');
 const classRoutes = require('./admin/class.routes');
+const tutorRoutesmain = require('./tutor/tutor.routes');
+
 //Mount routes
 router.use('/auth', authRoutes);
 router.use('/admin/classes', classRoutes);
@@ -16,5 +18,7 @@ router.use('/admin/students', studentRoutes);
 router.use('/admin/tutors', tutorRoutes);
 router.use('/admin/families', familyRoutes);
 router.use('/admin/rooms', roomRoutes); 
+router.use('/tutor', tutorRoutesmain);
+
 
 module.exports = router;
