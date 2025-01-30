@@ -175,7 +175,7 @@ const authController = {
     verifyResetCode : async (req, res) => {
         try {
             const { email, resetCode } = req.body;
-            console.log(email,resetCode);
+     
             const user = await User.findOne({ email });
             if (!user) {
                 return res.status(404).json({ message: 'User not found' });

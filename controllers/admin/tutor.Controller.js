@@ -39,7 +39,7 @@ const tutorController = {
           message: "User with this email already exists",
         });
       }
-      console.log(category);
+   
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
       const newTutor = new User({
@@ -125,7 +125,7 @@ const tutorController = {
         .skip((page - 1) * limit)
         .limit(limit)
         .sort({ createdAt: -1 });
-      console.log(tutors);
+    
 
       // Transform the data for frontend
       //calculate work hours for each week
@@ -178,7 +178,7 @@ const tutorController = {
 
   getById: async (req, res) => {
     try {
-      console.log(req.params);
+   
       const tutor = await TutorProfile.findById(req.params.id).populate(
         "user",
         "-password"
@@ -283,8 +283,7 @@ const tutorController = {
       const tutorId = req.params.id;
       const { shift } = req.body;
 
-      console.log(tutorId);
-
+  
       const tutor = await TutorProfile.findOne({ _id: tutorId });
       if (!tutor) {
         return res.status(404).json({ message: "Tutor not found" });

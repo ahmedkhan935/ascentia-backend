@@ -9,7 +9,7 @@ const studentController = {
     create: async (req, res) => {
         try {
             const student = req.body.student?JSON.parse(req.body.student):req.body;
-            console.log(student);
+         
             const existingUser = await User.findOne({ email: student.email });
             if (existingUser) {
                 return res.status(400).json({ status:"Error",message: 'User with this email already exists' });
@@ -156,7 +156,7 @@ const studentController = {
 
     update: async (req, res) => {
         try {
-            console.log(req.body);
+       
             const { firstName, lastName, email,password,isActive } = req.body;
             let updateData={};
             
@@ -178,7 +178,7 @@ const studentController = {
                 updateData.email = email;
             }
 
-            console.log(updateData);
+         
 
 
             const student = await User.findOneAndUpdate(
