@@ -181,7 +181,7 @@ const tutorController = {
                       room: sessionToReschedule.room
                   };
                     requestData.message = `Session reschedule from ${sessionToReschedule.startTime} - ${sessionToReschedule.endTime} to ${newSession.startTime} - ${newSession.endTime}`;
-                    requestData.subject = `Session reschedule request for ${sessionToReschedule.date.toDateString()} to ${newSession.date.toDateString()}`;
+                    requestData.subject = `Session reschedule request for ${sessionToReschedule.date.toDateString()} to ${newSession.date}`;
                   break;
 
               default:
