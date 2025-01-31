@@ -4,4 +4,5 @@ const router = express.Router();
 const { authenticateJWT, isTutor } = require('../../middleware/auth');
 
 router.get('/sessions', [authenticateJWT, isTutor], tutorController.getTutorSessions);
+router.put('/sessionAttendance/:id', [authenticateJWT, isTutor], tutorController.markStudentPresent);
 module.exports = router;
