@@ -461,20 +461,23 @@ const tutorController = {
     const bonuses = await Bonus.find().populate("user");
     return res.json(bonuses);
   },
-  getPendingRequests : async (req, res) => {
+  getPendingRequests: async (req, res) => {
     try {
-        const requests = await Request.find({
-            status: 'pending',
-        }).populate('tutor')
-        .populate('classId')
-        .populate('sessionId')
-        .populate('user');
+      const requests = await Request.find({
+        status: "pending",
+      })
+        .populate("tutor")
+        .populate("classId")
+        .populate("sessionId")
+        .populate("user");
 
-        res.json(requests);
+      res.json(requests);
     } catch (error) {
-        res.status(500).json({ message: 'Error fetching requests', error: error.message });
+      res
+        .status(500)
+        .json({ message: "Error fetching requests", error: error.message });
     }
-},
+  },
 
   //these are some tutor routes for the tutor
   getTutorClassesAndSessions: async (req, res) => {
@@ -495,6 +498,8 @@ const tutorController = {
       const classes = await Class.find({ tutor: tutor._id })
         .populate("students.id", "firstName lastName email")
         .populate("allocatedRoom")
+        .populate("subject")
+        .populate("tutor", "user")
         .lean();
 
       // Get all sessions for these classes
@@ -503,6 +508,7 @@ const tutorController = {
         class: { $in: classIds },
       })
         .populate("room")
+        .populate("attendance.student", "firstName lastName email")
         .lean();
 
       // Organize sessions by class
@@ -539,7 +545,6 @@ const tutorController = {
       });
     }
   },
-  
 };
 
 module.exports = tutorController;
