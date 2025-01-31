@@ -5,7 +5,7 @@ const User = require("../../models/User");
 const ClassSession = require("../../models/ClassSession");
 
 const createLog = require("../../middleware/logger").createLog;
-
+const Request = require("../../models/Request");
 const bcrypt = require("bcryptjs");
 const tutorController = {
   create: async (req, res) => {
@@ -461,6 +461,21 @@ const tutorController = {
     const bonuses = await Bonus.find().populate("user");
     return res.json(bonuses);
   },
+  getPendingRequests : async (req, res) => {
+    try {
+        const requests = await Request.find({
+            status: 'pending',
+        }).populate('tutor')
+        .populate('classId')
+        .populate('sessionId')
+        .populate('user');
+
+        res.json(requests);
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching requests', error: error.message });
+    }
+},
+
   //these are some tutor routes for the tutor
   getTutorClassesAndSessions: async (req, res) => {
     try {
