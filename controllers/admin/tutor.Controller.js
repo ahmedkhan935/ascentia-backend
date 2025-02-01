@@ -478,6 +478,22 @@ const tutorController = {
         .json({ message: "Error fetching requests", error: error.message });
     }
   },
+  getAllRequests: async (req, res) => {
+    try {
+      const requests = await Request.find({
+      })
+        .populate("tutor")
+        .populate("classId")
+        .populate("sessionId")
+        .populate("user");
+
+      res.json(requests);
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: "Error fetching requests", error: error.message });
+    }
+  },
 
   //these are some tutor routes for the tutor
   getTutorClassesAndSessions: async (req, res) => {

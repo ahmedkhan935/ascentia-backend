@@ -1,7 +1,7 @@
 const tutorController = require("../../controllers/tutor/tutor.Controller");
 const express = require("express");
 const router = express.Router();
-const { authenticateJWT, isTutor } = require("../../middleware/auth");
+const { authenticateJWT, isTutor, isAdmin } = require("../../middleware/auth");
 
 router.get(
   "/sessions",
@@ -32,6 +32,11 @@ router.put(
   "/markComplete/:id",
   [authenticateJWT, isTutor],
   tutorController.markSessionCompleted
+),
+router.put(
+  "/updateRequest/:id",
+  [authenticateJWT, isAdmin],
+  tutorController.updateRequestStatus
 );
 
 module.exports = router;

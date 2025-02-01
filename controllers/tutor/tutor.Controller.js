@@ -261,7 +261,8 @@ const tutorController = {
 
   updateRequestStatus: async (req, res) => {
     try {
-      const { requestId } = req.params;
+      console.log("Here");
+      const  requestId  = req.params.id;
       const { status } = req.body;
 
       const request = await Request.findById(requestId);
@@ -276,18 +277,25 @@ const tutorController = {
       await request.save();
 
       // If request is approved, handle the corresponding action
-      if (status === "accepted") {
+      if (status == "accepted") {
         switch (request.type) {
           case "shift_reschedule":
             const tutor = await TutorProfile.findById(request.tutor);
             if (request.oldShiftId) {
-              // Remove old shift
-              tutor.shifts = tutor.shifts.filter(
-                (shift) => shift._id.toString() !== request.oldShiftId
-              );
+              const oldShift = tutor.shifts.id(request.oldShiftId);
+              oldShift.dayOfWeek = request.shift.dayOfWeek;
+              oldShift.startTime = request.shift.startTime;
+              oldShift.endTime = request.shift.endTime;
+            
+              //modify the shift
+
+            }
+            else {
+              tutor.shifts.push(request.shift);
+
             }
             // Add new shift
-            tutor.shifts.push(request.shift);
+            
             await tutor.save();
             break;
 
@@ -301,14 +309,30 @@ const tutorController = {
             break;
 
           case "session_reschedule":
+           
+            //create the new session
+            const newSession = new ClassSession({
+              date: request.newSession.date,  
+              startTime: request.newSession.startTime,
+              endTime: request.newSession.endTime,
+              room: request.newSession.room,
+              class: request.classId,
+              status: "scheduled",
+
+            });
+            await newSession.save();
             await ClassSession.findByIdAndUpdate(request.sessionId, {
-              ...request.newSession,
+              rescheduledTo: newSession._id,
               status: "rescheduled",
             });
+
+
+
             break;
+          
         }
       }
-
+     
       res.status(200).json({
         status: "success",
         message: "Request status updated",
