@@ -77,18 +77,17 @@ const tutorController = {
       // Handle different request types
       switch (type) {
         case "shift_reschedule":
+          console.log(shift);
           if (
             !shift ||
             shift.dayOfWeek == null ||
             !shift.startTime ||
             !shift.endTime
           ) {
-            return res
-              .status(400)
-              .json({
-                status: "error",
-                message: "Complete shift details are required",
-              });
+            return res.status(400).json({
+              status: "error",
+              message: "Complete shift details are required",
+            });
           }
 
           // Check for conflicts with existing shifts
@@ -127,12 +126,10 @@ const tutorController = {
             }
             requestData.oldShiftId = oldShiftId;
             if (oldShift.dayOfWeek != shift.dayOfWeek) {
-              return res
-                .status(400)
-                .json({
-                  status: "error",
-                  message: "Please request the change for same day.",
-                });
+              return res.status(400).json({
+                status: "error",
+                message: "Please request the change for same day.",
+              });
             }
             requestData.message = `Shift reschedule from ${oldShift.startTime} - ${oldShift.endTime} to ${shift.startTime} - ${shift.endTime}`;
             requestData.subject = `Shift reschedule request for ${oldShift.dayOfWeek}`;
@@ -205,17 +202,17 @@ const tutorController = {
             });
           }
 
-                  requestData.sessionId = sessionId;
-                  requestData.newSession = newSession;
-                  requestData.oldSession = {
-                      date: sessionToReschedule.date,
-                      startTime: sessionToReschedule.startTime,
-                      endTime: sessionToReschedule.endTime,
-                      room: sessionToReschedule.room
-                  };
-                    requestData.message = `Session reschedule from ${sessionToReschedule.startTime} - ${sessionToReschedule.endTime} to ${newSession.startTime} - ${newSession.endTime}`;
-                    requestData.subject = `Session reschedule request for ${sessionToReschedule.date.toDateString()} to ${newSession.date}`;
-                  break;
+          requestData.sessionId = sessionId;
+          requestData.newSession = newSession;
+          requestData.oldSession = {
+            date: sessionToReschedule.date,
+            startTime: sessionToReschedule.startTime,
+            endTime: sessionToReschedule.endTime,
+            room: sessionToReschedule.room,
+          };
+          requestData.message = `Session reschedule from ${sessionToReschedule.startTime} - ${sessionToReschedule.endTime} to ${newSession.startTime} - ${newSession.endTime}`;
+          requestData.subject = `Session reschedule request for ${sessionToReschedule.date} to ${newSession.date}`;
+          break;
 
         default:
           return res
@@ -350,6 +347,7 @@ const tutorController = {
       await session.save();
       res.status(200).json({ session, status: "success" });
     } catch (error) {
+      console.log(error);
       res.status(500).json({
         message: "Error marking session as completed",
         error: error.message,
@@ -363,6 +361,7 @@ const tutorController = {
       const session = await ClassSession.findById(req.params.id);
       const attendanceStatus = req.body.attendance;
       const studentId = req.body.student;
+      console.log("a", studentId);
       console.log(attendanceStatus);
       if (!session) {
         return res.status(404).json({
