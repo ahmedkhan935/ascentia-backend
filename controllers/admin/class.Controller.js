@@ -295,6 +295,7 @@ const ClassController = {
           class: savedClass._id,
           status: "pending",
           type: "Payment",
+          reason:"Class payment",
         });
         await payment.save();
         payments.push(payment);
@@ -306,7 +307,8 @@ const ClassController = {
         class: savedClass._id,
         status: "pending",
         type: "Payout",
-        paymentMethod: "stripe", // or handle from request
+        paymentMethod: "stripe", // or handle from request,
+        reason: "Tutor payout for class",
       });
       await tutorPayment.save();
 

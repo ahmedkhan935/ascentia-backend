@@ -109,6 +109,18 @@ const tutorProfileSchema = new mongoose.Schema(
     category: {
       type: String,
     },
+
+    stripeAccountId: {
+      type: String,
+    },
+    stripeOnboardingLink: {
+      type: String,
+    },
+    stripeOnboardingCompleted: {
+      type: Boolean,
+      default: false,
+    },
+    
   },
   {
     timestamps: true,

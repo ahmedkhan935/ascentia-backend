@@ -7,6 +7,9 @@ const ClassSession = require("../../models/ClassSession");
 const createLog = require("../../middleware/logger").createLog;
 const Request = require("../../models/Request");
 const bcrypt = require("bcryptjs");
+const dotenv = require("dotenv");
+dotenv.config();
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const tutorController = {
   create: async (req, res) => {
     try {
@@ -54,7 +57,18 @@ const tutorController = {
         phone,
       });
 
-      await newTutor.save();
+      //create stripe account 
+      const account = await stripe.accounts.create({
+        type: "express",
+      });
+      const onboardingLink = await stripe.accountLinks.create({
+        account: account.id,
+        refresh_url: "https://www.google.com",
+        return_url: "https://www.google.com",
+        type: "account_onboarding",
+      });
+      console.log(onboardingLink);
+      
       const tutorProfile = new TutorProfile({
         user: newTutor._id,
         subjects: subjects,
@@ -66,8 +80,12 @@ const tutorController = {
         },
         shifts,
         category,
+        stripeAccountId: account.id,
+        onboardingLink: onboardingLink,
+        
       });
-
+      
+      await newTutor.save();
       await tutorProfile.save();
 
       await createLog("CREATE", "TUTOR", newTutor._id, req.user, req);
@@ -387,6 +405,16 @@ const tutorController = {
         bonus: bonus.amount,
         description: bonus.reason,
       });
+      const BonusPayment = new Payment({
+        user: tutor._id,
+        amount: bonus.amount,
+        type: "Payout",
+        status: "pending",
+        paymentMethod: "stripe",
+        reason: "Bonus Payment",
+      });
+      await BonusPayment.save();
+
       await newBonus.save();
 
       res.json({ message: "Bonus added successfully" });

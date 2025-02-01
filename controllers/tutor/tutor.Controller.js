@@ -423,6 +423,19 @@ const tutorController = {
       });
     }
   },
+  getPayments: async (req, res) => {
+    try {
+      const tutor=await TutorProfile.findOne({user:req.user._id});
+      const payments = await Payment.find({ user: tutor._id }).populate("user");
+      res.status(200).json({ payments, status: "success" });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error fetching payments",
+        error: error.message,
+        status: "Error",
+      });
+    }
+  }
 };
 
 module.exports = tutorController;
