@@ -81,7 +81,7 @@ const tutorController = {
         shifts,
         category,
         stripeAccountId: account.id,
-        onboardingLink: onboardingLink,
+        stripeOnboardingLink: onboardingLink.url,
         
       });
       
