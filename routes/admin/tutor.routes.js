@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const tutorController = require('../../controllers/admin/tutor.Controller');
-const { authenticateJWT, isAdmin } = require('../../middleware/auth');
+const { authenticateJWT, isAdmin, isTutor } = require('../../middleware/auth');
 const upload = require('../../middleware/upload');
 
 router.post('/', [authenticateJWT, isAdmin],upload.single('photo'), tutorController.create);
@@ -19,6 +19,7 @@ router.post('/:id/bonus', [authenticateJWT, isAdmin], tutorController.AddBonus);
 router.delete('/:id/bonus/:bonusId', [authenticateJWT, isAdmin], tutorController.removeBonus);
 router.get('/:id/bonus', [authenticateJWT, isAdmin], tutorController.getBonus);
 router.get('/:id/bonus/:bonusId', [authenticateJWT, isAdmin], tutorController.getBonusById);
+router.get('/:tutorId/classes-sessions', [authenticateJWT, isTutor], tutorController.getTutorClassesAndSessions);
 
 
 

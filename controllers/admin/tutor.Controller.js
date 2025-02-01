@@ -1,6 +1,9 @@
 const TutorProfile = require("../../models/Tutor");
 const Bonus = require("../../models/Bonus");
+const Class = require("../../models/Class");
 const User = require("../../models/User");
+const ClassSession = require("../../models/ClassSession");
+
 const createLog = require("../../middleware/logger").createLog;
 const Request = require("../../models/Request");
 const bcrypt = require("bcryptjs");
@@ -39,7 +42,7 @@ const tutorController = {
           message: "User with this email already exists",
         });
       }
-   
+
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
       const newTutor = new User({
@@ -125,7 +128,6 @@ const tutorController = {
         .skip((page - 1) * limit)
         .limit(limit)
         .sort({ createdAt: -1 });
-    
 
       // Transform the data for frontend
       //calculate work hours for each week
@@ -178,7 +180,6 @@ const tutorController = {
 
   getById: async (req, res) => {
     try {
-   
       const tutor = await TutorProfile.findById(req.params.id).populate(
         "user",
         "-password"
@@ -283,7 +284,6 @@ const tutorController = {
       const tutorId = req.params.id;
       const { shift } = req.body;
 
-  
       const tutor = await TutorProfile.findOne({ _id: tutorId });
       if (!tutor) {
         return res.status(404).json({ message: "Tutor not found" });
@@ -476,6 +476,70 @@ const tutorController = {
     }
 },
 
+  //these are some tutor routes for the tutor
+  getTutorClassesAndSessions: async (req, res) => {
+    try {
+      // First find the tutor profile
+      const tutor = await TutorProfile.findOne({ user: req.user._id }).populate(
+        "user"
+      );
+
+      if (!tutor) {
+        return res.status(404).json({
+          status: "failed",
+          message: "Tutor not found",
+        });
+      }
+
+      // Get all classes for this tutor
+      const classes = await Class.find({ tutor: tutor._id })
+        .populate("students.id", "firstName lastName email")
+        .populate("allocatedRoom")
+        .lean();
+
+      // Get all sessions for these classes
+      const classIds = classes.map((c) => c._id);
+      const sessions = await ClassSession.find({
+        class: { $in: classIds },
+      })
+        .populate("room")
+        .lean();
+
+      // Organize sessions by class
+      const classesWithSessions = classes.map((classItem) => {
+        const classSessions = sessions.filter(
+          (session) => session.class.toString() === classItem._id.toString()
+        );
+
+        return {
+          ...classItem,
+          sessions: classSessions.map((session) => ({
+            _id: session._id,
+            date: session.date,
+            startTime: session.startTime,
+            endTime: session.endTime,
+            status: session.status,
+            room: session.room,
+            attendance: session.attendance || [],
+          })),
+        };
+      });
+
+      res.status(200).json({
+        status: "success",
+        data: {
+          classes: classesWithSessions,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: "failed",
+        message: "Error fetching tutor classes and sessions",
+        error: error.message,
+      });
+    }
+  },
+  
 };
 
 module.exports = tutorController;
