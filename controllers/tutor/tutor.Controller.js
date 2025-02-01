@@ -315,7 +315,6 @@ const tutorController = {
               date: request.newSession.date,  
               startTime: request.newSession.startTime,
               endTime: request.newSession.endTime,
-              room: request.newSession.room,
               class: request.classId,
               status: "scheduled",
 
