@@ -349,7 +349,41 @@ const ClassController = {
         name: "New Class",
         description: `New class created for ${subject}`,
         class: savedClass._id,
+        
       });
+      
+      const newActivity3= new Activity({  
+        name: "New Payout",
+        description: `New payout created for ${subject}`,
+        class: savedClass._id,
+        tutorId: tutorUser.user
+      });
+      const newActivity4 = new Activity({
+        name: "New Class Assignment",
+        description: `New class assigned to you`,
+        class: savedClass._id,
+        tutorId: tutorUser.user
+      });
+      await newActivity3.save();
+      await newActivity4.save();
+      for (const student of students) {
+        const newActivity5 = new Activity({
+          name: "New Class Assignment",
+          description: `New class assigned to you`,
+          class: savedClass._id,
+          studentId: student.id
+        });
+        await newActivity5.save();
+        const newActivity2 = new Activity({
+          name: "New Payment",
+          description: `New pending payment created for ${subject}`,
+          class: savedClass._id,
+          studentId: student.id
+        });
+        await newActivity2.save();
+
+      }
+      
       await newActivity.save();
 
       res.status(201).json({

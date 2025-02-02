@@ -95,7 +95,7 @@ const tutorController = {
       const newActivity = new Activity({
         name: "Tutor Created",
         description: `Tutor ${newTutor.firstName} ${newTutor.lastName} created`,
-        tutorId: newTutor._id,
+        tutorId: newTutor.user,
       });
       await newActivity.save();
 
@@ -357,7 +357,7 @@ const tutorController = {
       const newActivity = new Activity({
         name: "Shift Added",
         description: `Shift for ${days[shift.dayOfWeek]} ${shift.startTime} - ${shift.endTime} added for tutor ${tutor.user.firstName} ${tutor.user.lastName}`,
-        tutorId: tutor._id,
+        tutorId: tutor.user._id,
       });
       await newActivity.save();
 
@@ -383,7 +383,7 @@ const tutorController = {
       const newActivity = new Activity({
         name: "Shift Removed",
         description: `Shift removed for tutor ${tutor.user.firstName} ${tutor.user.lastName}`,
-        tutorId: tutor._id,
+        tutorId: tutor.user._id,
       });
 
       await newActivity.save();
@@ -445,7 +445,7 @@ const tutorController = {
       const newActivity = new Activity({
         name: "Bonus Added",
         description: `Bonus of ${bonus.amount} added for tutor ${tutor.user.firstName} ${tutor.user.lastName}`,
-        tutorId: tutor._id,
+        tutorId: tutor.user._id,
       });
       await newActivity.save();
       
@@ -491,7 +491,7 @@ const tutorController = {
       const newActivity = new Activity({
         name: "Bonus Removed",
         description: `Bonus removed for tutor ${tutor.user.firstName} ${tutor.user.lastName}`,
-        tutorId: tutor._id,
+        tutorId: tutor.user._id,
       });
       await newActivity.save();
       res.json({ message: "Bonus removed successfully" });
@@ -632,7 +632,7 @@ const tutorController = {
   },
   getActivities: async (req, res) => {
     try{
-      const activities = await Activity.find().sort({createdAt:-1});
+      const activities = await Activity.find().populate("studentId").populate("tutorId").populate("classId").populate("classSessionId").sort({createdAt:-1});
       res.json({status:"success",activities});
 
     }
@@ -651,6 +651,7 @@ const tutorController = {
       res.status(500).json({status:"failed",message:"Error fetching payments",error:error.message});
     }
   },
+  
 
 };
 

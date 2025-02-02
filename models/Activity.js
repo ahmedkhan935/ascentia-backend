@@ -9,6 +9,7 @@ const activitySchema = new mongoose.Schema({
         type: String,
         
     },
+    
     studentId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
