@@ -22,6 +22,12 @@ const classSessionSchema = new mongoose.Schema({
     rescheduledTo: { type: mongoose.Schema.Types.ObjectId, ref: 'ClassSession' },
     rescheduledFrom: { type: mongoose.Schema.Types.ObjectId, ref: 'ClassSession' },
     notes: String,
+    feedback:[{
+      student: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      rating: { type: Number, min: 1, max: 5 },
+      comment: String,
+      date: { type: Date, default: Date.now },
+    }],
   });
 const ClassSession = mongoose.model('ClassSession', classSessionSchema);
 module.exports = ClassSession;  

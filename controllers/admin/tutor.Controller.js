@@ -3,12 +3,14 @@ const Bonus = require("../../models/Bonus");
 const Class = require("../../models/Class");
 const User = require("../../models/User");
 const ClassSession = require("../../models/ClassSession");
-
+const Activity = require("../../models/Activity");
 const createLog = require("../../middleware/logger").createLog;
 const Request = require("../../models/Request");
 const bcrypt = require("bcryptjs");
 const dotenv = require("dotenv");
+const Payment = require("../../models/Payment");
 dotenv.config();
+const days  = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const tutorController = {
   create: async (req, res) => {
@@ -66,6 +68,7 @@ const tutorController = {
         refresh_url: "https://www.google.com",
         return_url: "https://www.google.com",
         type: "account_onboarding",
+
       });
       console.log(onboardingLink);
       
@@ -87,6 +90,14 @@ const tutorController = {
       
       await newTutor.save();
       await tutorProfile.save();
+
+      const newActivity = new Activity({
+        name: "Tutor Created",
+        description: `Tutor ${newTutor.firstName} ${newTutor.lastName} created`,
+        tutorId: newTutor._id,
+      });
+      await newActivity.save();
+
 
       await createLog("CREATE", "TUTOR", newTutor._id, req.user, req);
 
@@ -302,7 +313,7 @@ const tutorController = {
       const tutorId = req.params.id;
       const { shift } = req.body;
 
-      const tutor = await TutorProfile.findOne({ _id: tutorId });
+      const tutor = await TutorProfile.findOne({ _id: tutorId }).populate("user");
       if (!tutor) {
         return res.status(404).json({ message: "Tutor not found" });
       }
@@ -342,6 +353,13 @@ const tutorController = {
 
       tutor.shifts.push(shift);
       await tutor.save();
+      const newActivity = new Activity({
+        name: "Shift Added",
+        description: `Shift for ${days[shift.dayOfWeek]} ${shift.startTime} - ${shift.endTime} added for tutor ${tutor.user.firstName} ${tutor.user.lastName}`,
+        tutorId: tutor._id,
+      });
+      await newActivity.save();
+
       res.json({ message: "Shift added successfully" });
     } catch (error) {
       res
@@ -353,7 +371,7 @@ const tutorController = {
     try {
       const tutorId = req.params.id;
       const shiftId = req.params.shiftId;
-      const tutor = await TutorProfile.findOne({ _id: tutorId });
+      const tutor = await TutorProfile.findOne({ _id: tutorId }).populate("user");
       if (!tutor) {
         return res.status(404).json({ message: "Tutor not found" });
       }
@@ -361,6 +379,13 @@ const tutorController = {
         (shift) => shift._id.toString() !== shiftId
       );
       await tutor.save();
+      const newActivity = new Activity({
+        name: "Shift Removed",
+        description: `Shift removed for tutor ${tutor.user.firstName} ${tutor.user.lastName}`,
+        tutorId: tutor._id,
+      });
+
+      await newActivity.save();
       res.json({ message: "Shift removed successfully" });
     } catch (error) {
       res
@@ -416,6 +441,13 @@ const tutorController = {
       await BonusPayment.save();
 
       await newBonus.save();
+      const newActivity = new Activity({
+        name: "Bonus Added",
+        description: `Bonus of ${bonus.amount} added for tutor ${tutor.user.firstName} ${tutor.user.lastName}`,
+        tutorId: tutor._id,
+      });
+      await newActivity.save();
+      
 
       res.json({ message: "Bonus added successfully" });
     } catch (error) {
@@ -450,11 +482,17 @@ const tutorController = {
   removeBonus: async (req, res) => {
     try {
       const { tutorId, bonusId } = req.body;
-      const tutor = await TutorProfile.findOne({ user: tutorId });
+      const tutor = await TutorProfile.findOne({ user: tutorId }).populate('user');
       if (!tutor) {
         return res.status(404).json({ message: "Tutor not found" });
       }
       await Bonus.findByIdAndDelete(bonusId);
+      const newActivity = new Activity({
+        name: "Bonus Removed",
+        description: `Bonus removed for tutor ${tutor.user.firstName} ${tutor.user.lastName}`,
+        tutorId: tutor._id,
+      });
+      await newActivity.save();
       res.json({ message: "Bonus removed successfully" });
     } catch (error) {
       res

@@ -5,6 +5,7 @@ const ClassSession = require("../../models/ClassSession");
 const Room = require("../../models/Room");
 const Payment = require("../../models/Payment");
 const Tutor = require("../../models/Tutor");
+const Activity = require("../../models/Activity");
 
 // Helper function to check if a room is available for a specific time slot
 async function checkRoomAvailability(roomId, date, startTime, endTime) {
@@ -282,6 +283,14 @@ const ClassController = {
             session.endTime,
             room
           );
+          const newSessionActivity = new Activity({
+            name: "New Session",
+            description: `New session created for ${subject} on ${date.toISOString().split("T")[0]} at ${session.startTime}-${session.endTime}`,
+            class: savedClass._id,
+            classSession: classSession._id
+
+          });
+          await newSessionActivity.save();
           generatedSessions.push(classSession);
         }
       }
@@ -311,6 +320,12 @@ const ClassController = {
         reason: "Tutor payout for class",
       });
       await tutorPayment.save();
+      const newActivity = new Activity({
+        name: "New Class",
+        description: `New class created for ${subject}`,
+        class: savedClass._id,
+      });
+      await newActivity.save();
 
       res.status(201).json({
         status: "success",
@@ -376,6 +391,7 @@ const ClassController = {
         endTime,
       });
       await exsistingClass.save();
+     
       //now create sessions for each date
       const generatedSessions = [];
       const startOfDay = new Date(new Date().toISOString().slice(0, 10));
@@ -412,6 +428,13 @@ const ClassController = {
           endTime,
           exsistingClass.allocatedRoom
         );
+        const newSessionActivity = new Activity({
+          name: "New Session",
+          description: `New session created for ${exsistingClass.subject} on ${date.toISOString().split("T")[0]} at ${startTime}-${endTime}`,
+          class: classId,
+          classSession: classSession._id
+        });
+        await newSessionActivity.save();
         generatedSessions.push(classSession);
       }
 
@@ -478,6 +501,12 @@ const ClassController = {
       //now pull
       exsistingClass.sessions.splice(sessionIndex, 1);
       await exsistingClass.save();
+      const newActivity = new Activity({
+        name: "Session Deleted",
+        description: `Session deleted from ${exsistingClass.subject}`,
+        class: classId,
+      });
+      await newActivity.save();
       res.status(200).json({ status: "success", message: "Session deleted" });
 
       //now remove all sessions for this date
@@ -579,7 +608,15 @@ const ClassController = {
           },
         },
       });
+      const class_name = await Class.findById(session.class);
       await ClassSession.findByIdAndUpdate(sessionId, { room: roomId });
+      const newActivity = new Activity({
+        name: "Room Assigned",
+        description: `Room ${room.name} assigned to session for ${class_name.subject} on ${session.date.toISOString().split("T")[0]} at ${session.startTime}-${session.endTime}`,
+        class: session.class,
+        classSession: session._id,
+      });
+      await newActivity.save();
       res
         .status(200)
         .json({ message: "Room assigned to session", status: "success" });
@@ -619,6 +656,12 @@ const ClassController = {
 
       const updatedSession = await ClassSession.findByIdAndUpdate(sessionId, {
         room: null,
+      });
+      const newAcitivity = new Activity({
+        name: "Room Unassigned",
+        description: `Room ${room.name} unassigned from session for ${session.class} on ${session.date.toISOString().split("T")[0]} at ${session.startTime}-${session.endTime}`,
+        class: session.class,
+        classSession: session._id,
       });
       res
         .status(200)
