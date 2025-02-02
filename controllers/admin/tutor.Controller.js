@@ -591,6 +591,7 @@ const tutorController = {
       })
         .populate("room")
         .populate("attendance.student", "firstName lastName email")
+        .populate('feedback.student', 'firstName lastName')
         .lean();
 
       // Organize sessions by class
@@ -609,6 +610,7 @@ const tutorController = {
             status: session.status,
             room: session.room,
             attendance: session.attendance || [],
+            feedback: session.feedback || [],
           })),
         };
       });
