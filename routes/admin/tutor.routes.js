@@ -8,6 +8,7 @@ const upload = require('../../middleware/upload');
 router.post('/', [authenticateJWT, isAdmin],upload.single('photo'), tutorController.create);
 router.get('/', [authenticateJWT, isAdmin], tutorController.getAll);
 router.get('/bonus', [authenticateJWT, isAdmin], tutorController.getBonuses);
+router.get("/activities", [authenticateJWT, isAdmin], tutorController.getActivities);
 router.get('/requests/pending', [authenticateJWT, isAdmin], tutorController.getPendingRequests);
 router.get('/requests/all', [authenticateJWT, isAdmin], tutorController.getAllRequests);
 router.get('/:id', [authenticateJWT, isAdmin], tutorController.getById);

@@ -629,6 +629,16 @@ const tutorController = {
       });
     }
   },
+  getActivities: async (req, res) => {
+    try{
+      const activities = await Activity.find().sort({createdAt:-1});
+      res.json({status:"success",activities});
+
+    }
+    catch(error){
+      res.status(500).json({status:"failed",message:"Error fetching activities",error:error.message});
+    }
+  },
 };
 
 module.exports = tutorController;
