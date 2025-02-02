@@ -2,6 +2,7 @@ const express = require("express");
 const app = express();
 const cors = require("cors");
 const router = require("./routes/index");
+const router2 = require("./routes/second");
 const dotenv = require("dotenv");
 const connectDB = require("./utils/db");
 
@@ -11,8 +12,9 @@ const MODE = process.env.MODE || "local";
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+// app.use(express.json());
 app.use("/api", router);
+app.use("/api2", router2);
 app.get("/", (req, res) => {
   res.send("Hello to the Ascentia API");
 });

@@ -13,6 +13,7 @@ const tutorRoutesmain = require("./tutor/tutor.routes");
 const studentsRoutes = require("./student/student.routes");
 const studentsPaymentRoutes = require("./student/payment.routes");
 
+router.use(express.json());
 //Mount routes
 router.use("/auth", authRoutes);
 router.use("/admin/classes", classRoutes);

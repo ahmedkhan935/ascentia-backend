@@ -15,6 +15,4 @@ router.post(
   PaymentController.createPaymentIntent
 );
 
-router.post("/webhook", PaymentController.webHook);
-
 module.exports = router;
