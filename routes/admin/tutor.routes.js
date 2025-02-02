@@ -9,6 +9,7 @@ router.post('/', [authenticateJWT, isAdmin],upload.single('photo'), tutorControl
 router.get('/', [authenticateJWT, isAdmin], tutorController.getAll);
 router.get('/bonus', [authenticateJWT, isAdmin], tutorController.getBonuses);
 router.get("/activities", [authenticateJWT, isAdmin], tutorController.getActivities);
+router.get("/payments/admin", [authenticateJWT, isAdmin], tutorController.getPayments);
 router.get('/requests/pending', [authenticateJWT, isAdmin], tutorController.getPendingRequests);
 router.get('/requests/all', [authenticateJWT, isAdmin], tutorController.getAllRequests);
 router.get('/:id', [authenticateJWT, isAdmin], tutorController.getById);

@@ -9,6 +9,7 @@ const Request = require("../../models/Request");
 const bcrypt = require("bcryptjs");
 const dotenv = require("dotenv");
 const Payment = require("../../models/Payment");
+const { getPayments } = require("../tutor/tutor.Controller");
 dotenv.config();
 const days  = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
@@ -639,6 +640,18 @@ const tutorController = {
       res.status(500).json({status:"failed",message:"Error fetching activities",error:error.message});
     }
   },
+  getPayments: async (req, res) => {
+    try{
+      const payments = await Payment.find().sort({createdAt:-1});
+      res.json({status:"success",payments});
+
+
+    }
+    catch(error){
+      res.status(500).json({status:"failed",message:"Error fetching payments",error:error.message});
+    }
+  },
+
 };
 
 module.exports = tutorController;
