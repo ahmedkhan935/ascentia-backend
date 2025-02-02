@@ -642,7 +642,7 @@ const tutorController = {
   },
   getPayments: async (req, res) => {
     try{
-      const payments = await Payment.find().sort({createdAt:-1});
+      const payments = await Payment.find().populate('user').sort({createdAt:-1});
       res.json({status:"success",payments});
 
 

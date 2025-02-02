@@ -44,7 +44,18 @@ const paymentSchema = new mongoose.Schema({
     },
     reason:{
         type:String
-    }
+    },
+    dueDate:{
+        type:Date
+    },
+    classId:{
+        type:mongoose.Schema.Types.ObjectId,
+        ref:"Class"
+    },
+    classSessionId:{
+        type:mongoose.Schema.Types.ObjectId,
+        ref:"ClassSession"
+    },
     
   });
 

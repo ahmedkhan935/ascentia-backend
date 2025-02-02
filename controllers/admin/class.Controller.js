@@ -190,6 +190,13 @@ const ClassController = {
           message: "Tutor profile not found",
         });
       }
+      if(!tutorProfile.shifts || tutorProfile.shifts.length === 0) {
+        return res.status(400).json({
+          status: "failed",
+          message: "Tutor has no shifts set",
+        });
+      }
+        
 
       // Validate each session against tutor's shifts
       for (const session of sessions) {
@@ -292,16 +299,37 @@ const ClassController = {
       // Create payments
       const payments = [];
       for (const student of students) {
-        const payment = new Payment({
-          user: student.id,
-          amount: student.price,
-          class: savedClass._id,
-          status: "pending",
-          type: "Payment",
-          reason: "Class payment",
-        });
-        await payment.save();
-        payments.push(payment);
+        if(frequency == "once") {
+          const payment = new Payment({
+            user: student.id,
+            amount: student.price,
+            class: savedClass._id,
+            status: "pending",
+            type: "Payment",
+            reason: "Class payment",
+            dueDate: startDate,
+          });
+          await payment.save();
+          payments.push(payment);
+        }
+        else if (frequency == "session") {
+          //create separate payment for each session
+          for (const session of generatedSessions) {
+            const payment = new Payment({
+              user: student.id,
+              amount: student.price,
+              class: savedClass._id,
+              status: "pending",
+              type: "Payment",
+              reason: "Class Session payment",
+              dueDate: session.date,
+              classSessionId: session._id,
+              
+            });
+            await payment.save();
+            payments.push(payment);
+          }
+        }
       }
 
       const tutorPayment = new Payment({
