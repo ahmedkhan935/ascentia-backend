@@ -6,6 +6,7 @@ const Room = require("../../models/Room");
 const Payment = require("../../models/Payment");
 const Tutor = require("../../models/Tutor");
 const Activity = require("../../models/Activity");
+const TutorProfile = require("../../models/Tutor");
 
 // Helper function to check if a room is available for a specific time slot
 async function checkRoomAvailability(roomId, date, startTime, endTime) {
@@ -331,9 +332,11 @@ const ClassController = {
           }
         }
       }
+      const tutorUser = await TutorProfile.findOne({ _id: tutor });
+
 
       const tutorPayment = new Payment({
-        user: tutor,
+        user: tutorUser.user,
         amount: tutorPayout,
         class: savedClass._id,
         status: "pending",
