@@ -19,5 +19,7 @@ router.post(
   [authenticateJWT, isStudent],
   studentController.submitFeedback
 );
+router.get('/activities',[authenticateJWT,isStudent],studentController.getStudentActivities);
+router.get('/sessions',[authenticateJWT,isStudent],studentController.getStudentSessions);
 
 module.exports = router;

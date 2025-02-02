@@ -7,7 +7,7 @@ const Payment = require("../../models/Payment");
 const ClassSession = require("../../models/ClassSession");
 const TutorProfile = require("../../models/Tutor");
 const Request = require("../../models/Request");
-
+const Activity = require("../../models/Activity");
 function convertTimeToMinutes(timeStr) {
   if (!timeStr || typeof timeStr !== "string") {
     throw new Error("Invalid time string format");
@@ -141,7 +141,8 @@ const tutorController = {
           requestData.shift = shift;
           const newActivity = new Activity({
             name: "Shift Reschedule Request",
-            description: `Tutor ${user.firstName} requested to reschedule shift.`,
+            description: `Requested to reschedule shift.`,
+            tutor:user._id
           });
           await newActivity.save();
           break;
@@ -172,7 +173,8 @@ const tutorController = {
           requestData.sessionId = sessionId;
           const newAcitivity2 = new Activity({
             name: "Session Cancel Request",
-            description: `Tutor ${user.firstName} requested to cancel session.`,
+            description: `Requested to cancel session.`,
+            tutorId:user._id
           });
           await newAcitivity2.save();
 
@@ -225,7 +227,8 @@ const tutorController = {
           requestData.subject = `Session reschedule request for ${sessionToReschedule.date} to ${newSession.date}`;
           const newAcitivity = new Activity({
             name: "Session Reschedule Request",
-            description: `Tutor ${user.firstName} requested to reschedule session.`,
+            description: `Requested to reschedule session.`,
+            tutorId:user._id
           });
           await newAcitivity.save();
           break;
@@ -310,6 +313,14 @@ const tutorController = {
               tutor.shifts.push(request.shift);
 
             }
+            const newAcitivity = new Activity({
+              name: "Shift Reschedule Request Accepted",
+              description: `Shift reschedule request was accepted for ${request.shift.dayOfWeek}`,
+              tutorId:req.user._id
+            });
+            await newAcitivity.save();
+
+
             // Add new shift
             
             await tutor.save();
@@ -322,6 +333,12 @@ const tutorController = {
               cancelledAt: new Date(),
               cancellationReason: request.message,
             });
+            const newActivity = new Activity({
+              name: "Session Cancelled",
+              description: `Session cancel request accepted for session on ${request.date} from ${request.startTime} to ${request.endTime}`,
+              tutorId:req.user._id
+            });
+            await newActivity.save();
             break;
 
           case "session_reschedule":
@@ -340,6 +357,13 @@ const tutorController = {
               rescheduledTo: newSession._id,
               status: "rescheduled",
             });
+            
+            const newActivity2 = new Activity({
+              name: "Session Reschedule Request Accepted",
+              description: `Session reschedule request was accepted for session on ${request.date} from ${request.startTime} to ${request.endTime}`,
+              tutorId:req.user._id
+            });
+            await newActivity2.save();
 
 
 
@@ -347,6 +371,36 @@ const tutorController = {
           
         }
       }
+      if(status=="rejected"){
+        switch (request.type) {
+          case "shift_reschedule":
+            const newAcitivity = new Activity({
+              name: "Shift Reschedule Request Rejected",
+              description: `Shift reschedule request was rejected for ${request.shift.dayOfWeek}`,
+              tutorId:req.user._id
+            });
+            await newAcitivity.save();
+            break;
+          case "session_cancel":
+            const newActivity = new Activity({
+              name: "Session Cancel Request Rejected",
+              description: `Session cancel request was rejected for session on ${request.date} from ${request.startTime} to ${request.endTime}`,
+              tutorId:req.user._id
+            });
+            await newActivity.save();
+            break;
+          case "session_reschedule":
+            const newActivity2 = new Activity({
+              name: "Session Reschedule Request Rejected",
+              description: `Session reschedule request was rejected for session on ${request.date} from ${request.startTime} to ${request.endTime}`,
+              tutorId:req.user._id
+            });
+            await newActivity2.save();
+            break;
+
+        }
+      }
+    
      
       res.status(200).json({
         status: "success",
@@ -387,6 +441,7 @@ const tutorController = {
       const newActivity = new Activity({
         name: "Session Completed",
         description: `Session ${session.class.subject} for ${session.date} ${session.startTime} - ${session.endTime} marked as completed`,
+        tutorId:req.user._id
       });
       res.status(200).json({ session, status: "success" });
     } catch (error) {
@@ -455,7 +510,17 @@ const tutorController = {
         status: "Error",
       });
     }
-  }
+  },
+  getTutorActivities: async (req, res) => {
+    try{
+      const activities = await Activity.find({tutorId:req.user._id}).populate("studentId").populate("tutorId").populate("classId").populate("classSessionId").sort({createdAt:-1});
+      res.json({status:"success",activities});
+
+    }
+    catch(error){
+      res.status(500).json({status:"failed",message:"Error fetching activities",error:error.message});
+    }
+  },
 };
 
 module.exports = tutorController;

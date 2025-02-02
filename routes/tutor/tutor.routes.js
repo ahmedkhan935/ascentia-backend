@@ -39,5 +39,7 @@ router.put(
   tutorController.updateRequestStatus
 );
 router.get("/payments",[authenticateJWT,isTutor],tutorController.getPayments);
+router.get("/activities",[authenticateJWT,isTutor],tutorController.getTutorActivities);
+
 
 module.exports = router;

@@ -2,6 +2,7 @@ const TutorProfile = require("../../models/Tutor");
 const Bonus = require("../../models/Bonus");
 const Class = require("../../models/Class");
 const User = require("../../models/User");
+const Activity = require("../../models/Activity");
 const ClassSession = require("../../models/ClassSession");
 
 const studentController = {
@@ -154,6 +155,40 @@ const studentController = {
       res.status(500).json({ error: error.message });
     }
   },
+  getStudentActivities : async (req, res) => {
+    try {
+      const studentId = req.user._id;
+      const activities = await Activity.find({ studentId }).sort({ createdAt: -1 });
+      res.status(200).json({status:'success',activities});
+    } catch (error) {
+      console.error("Error in getStudentActivities:", error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+  getStudentSessions: async (req, res) => {
+    try {
+      const studentId = req.user._id;
+      const classes = await Class.find({ "students" : { $elemMatch: { id: studentId } } });
+      const sessions = await ClassSession.find({
+        class: { $in: classes.map(c => c._id) },
+        
+      })
+        .sort({ date: -1 })
+        .populate({
+          path: "class",
+          populate: {
+            path: "students.id",
+          },
+        })
+        .populate("room");
+
+      res.status(200).json({ status: "success", sessions });
+    } catch (error) {
+      console.error("Error in getStudentSessions:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+
 };
 
 module.exports = studentController;
