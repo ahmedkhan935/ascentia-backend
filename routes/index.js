@@ -11,6 +11,7 @@ const familyRoutes = require("./admin/family.routes");
 const classRoutes = require("./admin/class.routes");
 const tutorRoutesmain = require("./tutor/tutor.routes");
 const studentsRoutes = require("./student/student.routes");
+const studentsPaymentRoutes = require("./student/payment.routes");
 
 //Mount routes
 router.use("/auth", authRoutes);
@@ -21,5 +22,6 @@ router.use("/admin/families", familyRoutes);
 router.use("/admin/rooms", roomRoutes);
 router.use("/tutor", tutorRoutesmain);
 router.use("/student", studentsRoutes);
+router.use("/studentPayments", studentsPaymentRoutes);
 
 module.exports = router;
