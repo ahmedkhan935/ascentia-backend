@@ -139,6 +139,11 @@ const tutorController = {
           }
 
           requestData.shift = shift;
+          const newActivity = new Activity({
+            name: "Shift Reschedule Request",
+            description: `Tutor ${user.firstName} requested to reschedule shift.`,
+          });
+          await newActivity.save();
           break;
 
         case "session_cancel":
@@ -165,6 +170,12 @@ const tutorController = {
             "Class cancellation request for " + session.date.toDateString();
           requestData.subject = "Class cancellation";
           requestData.sessionId = sessionId;
+          const newAcitivity2 = new Activity({
+            name: "Session Cancel Request",
+            description: `Tutor ${user.firstName} requested to cancel session.`,
+          });
+          await newAcitivity2.save();
+
           break;
 
         case "session_reschedule":
@@ -212,6 +223,11 @@ const tutorController = {
           };
           requestData.message = `Session reschedule from ${sessionToReschedule.startTime} - ${sessionToReschedule.endTime} to ${newSession.startTime} - ${newSession.endTime}`;
           requestData.subject = `Session reschedule request for ${sessionToReschedule.date} to ${newSession.date}`;
+          const newAcitivity = new Activity({
+            name: "Session Reschedule Request",
+            description: `Tutor ${user.firstName} requested to reschedule session.`,
+          });
+          await newAcitivity.save();
           break;
 
         default:
@@ -359,7 +375,7 @@ const tutorController = {
   //route to mark session as completed
   markSessionCompleted: async (req, res) => {
     try {
-      const session = await ClassSession.findById(req.params.id);
+      const session = await ClassSession.findById(req.params.id).populate("class");
       if (!session) {
         return res.status(404).json({
           message: "Session not found",
@@ -368,6 +384,10 @@ const tutorController = {
       }
       session.status = "completed"; //mark session as completed
       await session.save();
+      const newActivity = new Activity({
+        name: "Session Completed",
+        description: `Session ${session.class.subject} for ${session.date} ${session.startTime} - ${session.endTime} marked as completed`,
+      });
       res.status(200).json({ session, status: "success" });
     } catch (error) {
       console.log(error);

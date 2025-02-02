@@ -3,7 +3,7 @@ const Class= require('../../models/Class');
 const User= require('../../models/User');
 const ClassSession = require('../../models/ClassSession');
 
-
+const Activity = require("../../models/Activity");
 const RoomController = {
     AddRoom: async (req, res) => {
         try {
@@ -12,6 +12,13 @@ const RoomController = {
                 name,
                 description
             });
+            const newActivity = new Activity({
+
+                name: 'New Room',
+                description: `New Room ${newRoom.name} Added`,
+            });
+            await newActivity.save();
+
             await newRoom.save();
             res.status(201).json({ message: 'Room added successfully', room: newRoom });
         } catch (error) {
@@ -70,6 +77,11 @@ const RoomController = {
             if (!room) {
                 return res.status(404).json({ message: 'Room not found' });
             }
+            const newActivity = new Activity({
+                name: 'Room Deleted',
+                description: `Room ${room.name} Deleted`,
+            });
+            await newActivity.save();
             res.json({ message: 'Room deleted successfully' });
         } catch (error) {
             res.status(500).json({ message: 'Error deleting room', error: error.message });
@@ -106,6 +118,12 @@ const RoomController = {
             };
             room.bookings.push(booking);
             await room.save();
+            const newActivity = new Activity({
+                name: 'New Booking',
+                description: `New Booking added to Room ${room.name}`,
+            });
+            await newActivity.save();
+
             res.status(201).json({ message: 'Booking added successfully', booking });
         } catch (error) {
             res.status(500).json({ message: 'Error adding booking', error: error.message });
@@ -138,6 +156,13 @@ const RoomController = {
             }
             booking.set({ date, startTime, endTime, class: classId });
             await room.save();
+            const newActivity = new Activity({
+                name: 'Booking Updated',
+                description: `Booking updated in Room ${room.name}`,
+            });
+
+            await newActivity.save();
+
             res.json({ message: 'Booking updated successfully', booking });
         } catch (error) {
             res.status(500).json({ message: 'Error updating booking', error: error.message });
@@ -156,6 +181,10 @@ const RoomController = {
             }
             booking.remove();
             await room.save();
+            const newActivity = new Activity({
+                name: 'Booking Removed',
+                description: `Booking removed from Room ${room.name}`,
+            });
             res.json({ message: 'Booking removed successfully' });
         } catch (error) {
             res.status(500).json({ message: 'Error removing booking', error: error.message });

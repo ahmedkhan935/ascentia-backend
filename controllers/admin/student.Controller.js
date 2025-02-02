@@ -4,7 +4,7 @@ const Family = require('../../models/Family');
 const Class = require('../../models/Class');
 const bcrypt = require('bcryptjs');
 const Payment = require('../../models/Payment');
-
+const Activity = require("../../models/Activity");
 const studentController = {
     create: async (req, res) => {
         try {
@@ -34,6 +34,16 @@ const studentController = {
             
             const parent = student.parent;
             const hashedPassword2 = await bcrypt.hash(parent.password, salt);
+            const existingParent = await User.findOne({ email: parent.email });
+            if (existingParent) {
+                //add the student to the family
+                const family = await Family.findOne({ parentUser: existingParent._id });
+                if (family) {
+                    family.students.push(newStudent._id);
+                    await family.save();
+                } 
+            } else {
+
             const newParent = new User({
                 email: parent.email,
                 password: hashedPassword,
@@ -47,10 +57,20 @@ const studentController = {
                 parentUser: newParent._id,
                 students: [newStudent._id]
             });
-            
-            await newStudent.save();
             await newParent.save();
             await newFamily.save();
+        }
+            
+            await newStudent.save();
+            
+            const newActivity = new Activity({
+                name: 'New Student',
+                description: 'New Student Added',
+                studentId: newStudent._id,
+                
+            });
+            await newActivity.save();
+
 
             await createLog('CREATE', 'USER', newStudent._id, req.user, req, { role: 'student' });
 
