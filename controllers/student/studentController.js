@@ -165,6 +165,29 @@ const studentController = {
       res.status(500).json({ error: error.message });
     }
   },
+  getStudentSessions: async (req, res) => {
+    try {
+      const studentId = req.user._id;
+      const classes = await Class.find({ "students" : { $elemMatch: { id: studentId } } });
+      const sessions = await ClassSession.find({
+        class: { $in: classes.map(c => c._id) },
+        
+      })
+        .sort({ date: -1 })
+        .populate({
+          path: "class",
+          populate: {
+            path: "students.id",
+          },
+        })
+        .populate("room");
+
+      res.status(200).json({ status: "success", sessions });
+    } catch (error) {
+      console.error("Error in getStudentSessions:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
 
 };
 
