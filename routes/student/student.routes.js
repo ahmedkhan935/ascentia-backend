@@ -19,7 +19,24 @@ router.post(
   [authenticateJWT, isStudent],
   studentController.submitFeedback
 );
-router.get('/activities',[authenticateJWT,isStudent],studentController.getStudentActivities);
-router.get('/sessions',[authenticateJWT,isStudent],studentController.getStudentSessions);
-
+router.get(
+  "/activities",
+  [authenticateJWT, isStudent],
+  studentController.getStudentActivities
+);
+router.get(
+  "/sessions",
+  [authenticateJWT, isStudent],
+  studentController.getStudentSessions
+);
+router.put(
+  "/profile",
+  [authenticateJWT, isStudent],
+  studentController.updateProfile
+);
+router.get(
+  "/profile",
+  [authenticateJWT, isStudent],
+  studentController.getProfile
+);
 module.exports = router;

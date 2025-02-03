@@ -155,11 +155,13 @@ const studentController = {
       res.status(500).json({ error: error.message });
     }
   },
-  getStudentActivities : async (req, res) => {
+  getStudentActivities: async (req, res) => {
     try {
       const studentId = req.user._id;
-      const activities = await Activity.find({ studentId }).sort({ createdAt: -1 });
-      res.status(200).json({status:'success',activities});
+      const activities = await Activity.find({ studentId }).sort({
+        createdAt: -1,
+      });
+      res.status(200).json({ status: "success", activities });
     } catch (error) {
       console.error("Error in getStudentActivities:", error);
       res.status(500).json({ error: error.message });
@@ -168,10 +170,11 @@ const studentController = {
   getStudentSessions: async (req, res) => {
     try {
       const studentId = req.user._id;
-      const classes = await Class.find({ "students" : { $elemMatch: { id: studentId } } });
+      const classes = await Class.find({
+        students: { $elemMatch: { id: studentId } },
+      });
       const sessions = await ClassSession.find({
-        class: { $in: classes.map(c => c._id) },
-        
+        class: { $in: classes.map((c) => c._id) },
       })
         .sort({ date: -1 })
         .populate({
@@ -187,8 +190,72 @@ const studentController = {
       console.error("Error in getStudentSessions:", error);
       res.status(500).json({ error: error.message });
     }
-  }
+  },
+  updateProfile: async (req, res) => {
+    try {
+      const studentId = req.user.id;
+      const { firstName,lastName, dateOfBirth, email, password } = req.body;
+      console.log(req.body);
+      // Find and update user
+      const user = await User.findById(studentId);
+      if (!user) {
+        return res.status(404).json({ error: "Student not found" });
+      }
 
+      // Update user fields
+      user.firstName = firstName;
+      user.lastName = lastName;
+      user.dateOfBirth = dateOfBirth;
+      user.email = email;
+      if (password) {
+        user.password = password; // Note: Ensure password hashing middleware is in place in User model
+      }
+
+      await user.save();
+
+      // Create activity log
+      await Activity.create({
+        studentId,
+        type: "PROFILE_UPDATE",
+        description: "Updated profile information",
+        timestamp: new Date(),
+      });
+
+      res.status(200).json({
+        status: "success",
+        message: "Profile updated successfully",
+        data: {
+          firstName,
+          lastName,
+          dateOfBirth,
+          email,
+        },
+      });
+    } catch (error) {
+      console.error("Error in updateProfile:", error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+  getProfile: async (req, res) => {
+    try {
+      const studentId = req.user.id;
+      const student = await User.findById(studentId)
+        .select("firstName lastName dateOfBirth email password")
+        .lean();
+
+      if (!student) {
+        return res.status(404).json({ error: "Student not found" });
+      }
+
+      res.status(200).json({
+        status: "success",
+        data: student,
+      });
+    } catch (error) {
+      console.error("Error in getProfile:", error);
+      res.status(500).json({ error: error.message });
+    }
+  },
 };
 
 module.exports = studentController;

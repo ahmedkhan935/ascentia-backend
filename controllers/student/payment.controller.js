@@ -28,7 +28,6 @@ const paymentController = {
       const payment = await Payment.findOne({
         _id: paymentId,
         user: req.user.id,
-        status: "pending",
       });
 
       //set the payment intent as processing
