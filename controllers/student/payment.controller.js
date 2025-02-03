@@ -112,14 +112,6 @@ const paymentController = {
           paymentMethod: "stripe",
           updatedAt: new Date(),
         });
-      } else if (event.type === "payment_intent.processing") {
-        const paymentIntent = event.data.object;
-        const { paymentId } = paymentIntent.metadata;
-        await Payment.findByIdAndUpdate(paymentId, {
-          status: "processing",
-          paymentMethod: "stripe",
-          updatedAt: new Date(),
-        });
       }
       res.json({ received: true });
     } catch (error) {
