@@ -35,4 +35,9 @@ router.get(
   [authenticateJWT, isAdmin],
   ClassController.getClassSessionsStats
 );
+router.get(
+  "/dashboard",
+  [authenticateJWT, isAdmin],
+  ClassController.getDashboardStats
+);
 module.exports = router;

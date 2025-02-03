@@ -33,13 +33,21 @@ router.put(
   [authenticateJWT, isTutor],
   tutorController.markSessionCompleted
 ),
-router.put(
-  "/updateRequest/:id",
-  [authenticateJWT, isAdmin],
-  tutorController.updateRequestStatus
+  router.put(
+    "/updateRequest/:id",
+    [authenticateJWT, isAdmin],
+    tutorController.updateRequestStatus
+  );
+router.get(
+  "/payments",
+  [authenticateJWT, isTutor],
+  tutorController.getPayments
 );
-router.get("/payments",[authenticateJWT,isTutor],tutorController.getPayments);
-router.get("/activities",[authenticateJWT,isTutor],tutorController.getTutorActivities);
-
+router.get(
+  "/activities",
+  [authenticateJWT, isTutor],
+  tutorController.getTutorActivities
+);
+router.get("/stats", [authenticateJWT, isTutor], tutorController.getStats);
 
 module.exports = router;
