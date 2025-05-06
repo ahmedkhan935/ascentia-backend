@@ -7,7 +7,7 @@ const { authenticateJWT, isAdmin } = require('../../middleware/auth');
 router.post('/', [authenticateJWT, isAdmin], roomController.AddRoom);
 router.get('/', [authenticateJWT, isAdmin], roomController.GetAllRooms);
 router.get('/:id', [authenticateJWT, isAdmin], roomController.GetRoom);
-router.put('/:id', [authenticateJWT, isAdmin], roomController.UpdateRoom);
+router.put('/update/:id', [authenticateJWT, isAdmin], roomController.UpdateRoom);
 router.delete('/:id', [authenticateJWT, isAdmin], roomController.DeleteRoom);
 router.post("/:id/booking", [authenticateJWT, isAdmin], roomController.AddBooking);
 router.delete("/:id/booking/:bookingId", [authenticateJWT, isAdmin], roomController.RemoveBooking);

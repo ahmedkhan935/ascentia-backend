@@ -127,7 +127,5 @@ const tutorProfileSchema = new mongoose.Schema(
   }
 );
 
-// Methods for schedule management
-
 const TutorProfile = mongoose.model("TutorProfile", tutorProfileSchema);
 module.exports = TutorProfile;

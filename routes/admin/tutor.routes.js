@@ -23,7 +23,7 @@ router.delete('/:id/bonus/:bonusId', [authenticateJWT, isAdmin], tutorController
 router.get('/:id/bonus', [authenticateJWT, isAdmin], tutorController.getBonus);
 router.get('/:id/bonus/:bonusId', [authenticateJWT, isAdmin], tutorController.getBonusById);
 router.get('/:tutorId/classes-sessions', [authenticateJWT, isTutor], tutorController.getTutorClassesAndSessions);
-
+router.put("/updateTutor/:id",[authenticateJWT,isAdmin],tutorController.updateTutor)
 
 
 module.exports = router;

@@ -19,5 +19,5 @@ router.get("/", [authenticateJWT, isAdmin], studentController.getAllFormatted);
 router.get("/:id", [authenticateJWT, isAdmin], studentController.getById);
 router.put("/:id", [authenticateJWT, isAdmin], studentController.update);
 router.delete("/:id", [authenticateJWT, isAdmin], studentController.delete);
-
+router.put("/update/:id",[authenticateJWT,isAdmin],studentController.updateStudent)
 module.exports = router;

@@ -1,8 +1,8 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 const userSchema = new mongoose.Schema({
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
+  email: { type: String,     required: function() { return this.role !== 'parent'; }  , unique: true },
+  password: { type: String,     required: function() { return this.role !== 'parent'; },},
   role: {
     type: String,
     enum: ["admin", "tutor", "student", "parent"],
@@ -26,6 +26,10 @@ const userSchema = new mongoose.Schema({
   },
   dateOfBirth: Date,
   isActive: { type: Boolean, default: true },
+  selfGuardian: {
+    type: Boolean,
+    default: false,
+  },
 });
 const User = mongoose.model("User", userSchema);
 module.exports = User;

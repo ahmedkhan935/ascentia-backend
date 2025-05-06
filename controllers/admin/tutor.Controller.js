@@ -154,7 +154,7 @@ const tutorController = {
 
       // Get paginated tutor profiles with populated user data
       const tutors = await TutorProfile.find(query)
-        .populate("user", "firstName lastName email")
+        .populate("user", "firstName lastName email phone")
         .skip((page - 1) * limit)
         .limit(limit)
         .sort({ createdAt: -1 });
@@ -178,6 +178,7 @@ const tutorController = {
           id: tutor._id,
           name: `${tutor.user.firstName} ${tutor.user.lastName}`,
           email: tutor.user.email,
+          phone:      tutor.user.phone,
           initials: `${tutor.user.firstName[0]}${tutor.user.lastName[0]}`,
           workHours: `${totalWorkHours.toFixed(2)} hours`,
           status: tutor.status,
@@ -651,7 +652,73 @@ const tutorController = {
       res.status(500).json({status:"failed",message:"Error fetching payments",error:error.message});
     }
   },
-  
+  updateTutor: async (req, res) => {
+    console.log("here>>>>>>>>>>>>")
+    try {
+      const tutorId = req.params.id;
+      const user = await User.findById(tutorId);
+      if (!user) {
+        return res.status(404).json({ message: 'Tutor not found' });
+      }
+      if (req.body.email) {
+        const email = JSON.parse(req.body.email);
+        if (email !== user.email) {
+          const conflict = await User.findOne({ email });
+          if (conflict) {
+            return res.status(400).json({ message: 'Email already in use' });
+          }
+          user.email = email;
+        }
+      }
+      if (req.body.password) {
+        const raw = JSON.parse(req.body.password);
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(raw, salt);
+      }
+      if (req.body.firstName) user.firstName = JSON.parse(req.body.firstName);
+      if (req.body.lastName)  user.lastName  = JSON.parse(req.body.lastName);
+      if (req.body.phone)     user.phone     = JSON.parse(req.body.phone);
+
+      await user.save();
+      const profile = await TutorProfile.findOne({ user: tutorId });
+      if (!profile) {
+        return res.status(404).json({ message: 'Tutor profile not found' });
+      }
+
+      if (req.body.subjects)   profile.subjects      = JSON.parse(req.body.subjects);
+      if (req.body.category)   profile.category      = JSON.parse(req.body.category);
+      if (req.body.degree)     profile.qualifications.degree      = JSON.parse(req.body.degree);
+      if (req.body.university) profile.qualifications.institution = JSON.parse(req.body.university);
+
+      await profile.save();
+      const activity = new Activity({
+        name:        'Tutor Updated',
+        description: `Tutor ${user.firstName} ${user.lastName} updated`,
+        tutorId:     tutorId,
+      });
+      await activity.save();
+
+      await createLog('UPDATE', 'TUTOR', tutorId, req.user, req);
+
+      // 5) Respond with the updated tutor
+      res.status(200).json({
+        message: 'Tutor updated successfully',
+        tutor: {
+          _id:       user._id,
+          email:     user.email,
+          firstName: user.firstName,
+          lastName:  user.lastName,
+          phone:     user.phone,
+          profile,
+        },
+      });
+      console.log("response??????????")
+
+    } catch (error) {
+      console.error('Error in Tutor.update:', error);
+      res.status(500).json({ message: 'Error updating tutor', error: error.message });
+    }
+  },
 
 };
 
