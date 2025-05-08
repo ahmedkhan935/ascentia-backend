@@ -652,74 +652,138 @@ const tutorController = {
       res.status(500).json({status:"failed",message:"Error fetching payments",error:error.message});
     }
   },
-  updateTutor: async (req, res) => {
-    console.log("here>>>>>>>>>>>>")
-    try {
-      const tutorId = req.params.id;
-      const user = await User.findById(tutorId);
-      if (!user) {
-        return res.status(404).json({ message: 'Tutor not found' });
-      }
-      if (req.body.email) {
-        const email = JSON.parse(req.body.email);
-        if (email !== user.email) {
-          const conflict = await User.findOne({ email });
-          if (conflict) {
-            return res.status(400).json({ message: 'Email already in use' });
-          }
-          user.email = email;
-        }
-      }
-      if (req.body.password) {
-        const raw = JSON.parse(req.body.password);
-        const salt = await bcrypt.genSalt(10);
-        user.password = await bcrypt.hash(raw, salt);
-      }
-      if (req.body.firstName) user.firstName = JSON.parse(req.body.firstName);
-      if (req.body.lastName)  user.lastName  = JSON.parse(req.body.lastName);
-      if (req.body.phone)     user.phone     = JSON.parse(req.body.phone);
+updateTutor: async (req, res) => {
+  console.log("Update Tutor Request Body:", req.body);
 
-      await user.save();
-      const profile = await TutorProfile.findOne({ user: tutorId });
-      if (!profile) {
-        return res.status(404).json({ message: 'Tutor profile not found' });
-      }
+  try {
+    // 1) Treat req.params.id as the TutorProfile _id
+    const profileId = req.params.id;
+    console.log("Profile ID:", profileId);
 
-      if (req.body.subjects)   profile.subjects      = JSON.parse(req.body.subjects);
-      if (req.body.category)   profile.category      = JSON.parse(req.body.category);
-      if (req.body.degree)     profile.qualifications.degree      = JSON.parse(req.body.degree);
-      if (req.body.university) profile.qualifications.institution = JSON.parse(req.body.university);
-
-      await profile.save();
-      const activity = new Activity({
-        name:        'Tutor Updated',
-        description: `Tutor ${user.firstName} ${user.lastName} updated`,
-        tutorId:     tutorId,
-      });
-      await activity.save();
-
-      await createLog('UPDATE', 'TUTOR', tutorId, req.user, req);
-
-      // 5) Respond with the updated tutor
-      res.status(200).json({
-        message: 'Tutor updated successfully',
-        tutor: {
-          _id:       user._id,
-          email:     user.email,
-          firstName: user.firstName,
-          lastName:  user.lastName,
-          phone:     user.phone,
-          profile,
-        },
-      });
-      console.log("response??????????")
-
-    } catch (error) {
-      console.error('Error in Tutor.update:', error);
-      res.status(500).json({ message: 'Error updating tutor', error: error.message });
+    const profile = await TutorProfile.findById(profileId);
+    if (!profile) {
+      return res.status(404).json({ message: 'Tutor profile not found' });
     }
-  },
+
+    // 2) Now load the User by profile.user
+    const user = await User.findById(profile.user);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    console.log("Current user data:", {
+      email:     user.email,
+      firstName: user.firstName,
+      lastName:  user.lastName,
+      phone:     user.phone
+    });
+
+  if (req.body.email) {
+  const newEmail = req.body.email.trim().toLowerCase();
+  if (newEmail !== user.email) {
+    const existing = await User.findOne({ email: newEmail });
+    if (existing && existing._id.toString() !== user._id.toString()) {
+      return res.status(400).json({ message: 'Email already in use by another user' });
+    }
+    user.email = newEmail;
+    console.log("Updated email to:", newEmail);
+  }
+}
+
+
+    if (req.body.password) {
+      const raw = req.body.password;
+      console.log("Updating password…");
+      const salt = await bcrypt.genSalt(10);
+      user.password = await bcrypt.hash(raw, salt);
+    }
+
+    if (req.body.firstName) {
+      user.firstName = req.body.firstName;
+      console.log("Updated firstName to:", user.firstName);
+    }
+
+    if (req.body.lastName) {
+      user.lastName = req.body.lastName;
+      console.log("Updated lastName to:", user.lastName);
+    }
+
+    if (req.body.phone) {
+      user.phone = req.body.phone;
+      console.log("Updated phone to:", user.phone);
+    }
+
+    await user.save();
+    console.log("Saved updated user");
+
+    // 4) Update TutorProfile fields
+    if (req.body.subjects) {
+      profile.subjects = Array.isArray(req.body.subjects)
+        ? req.body.subjects
+        : JSON.parse(req.body.subjects);
+      console.log("Updated subjects to:", profile.subjects);
+    }
+
+    if (req.body.category) {
+      profile.category = req.body.category;
+      console.log("Updated category to:", profile.category);
+    }
+
+    // ensure qualifications array exists
+    if (!Array.isArray(profile.qualifications) || profile.qualifications.length === 0) {
+      profile.qualifications = [{ degree: "", institution: "" }];
+    }
+
+    if (req.body.degree) {
+      profile.qualifications[0].degree = req.body.degree;
+      console.log("Updated degree to:", profile.qualifications[0].degree);
+    }
+
+    if (req.body.university) {
+      profile.qualifications[0].institution = req.body.university;
+      console.log("Updated university to:", profile.qualifications[0].institution);
+    }
+
+    await profile.save();
+    console.log("Saved updated profile");
+
+    // 5) Log activity against the profileId
+    const activity = new Activity({
+      name:             'Tutor Updated',
+      description:      `Tutor ${user.firstName} ${user.lastName} updated`,
+      tutorProfileId:   profileId,
+    });
+    await activity.save();
+    await createLog('UPDATE', 'TUTOR', profileId, req.user, req);
+
+    // 6) Fetch fresh data for response
+    const freshUser    = await User.findById(user._id);
+    const freshProfile = await TutorProfile.findById(profileId);
+
+    // 7) Respond with updated data
+    res.status(200).json({
+      message: 'Tutor updated successfully',
+      tutor: {
+        profileId,
+        user: {
+          _id:       freshUser._id,
+          email:     freshUser.email,
+          firstName: freshUser.firstName,
+          lastName:  freshUser.lastName,
+          phone:     freshUser.phone,
+        },
+        profile: freshProfile
+      },
+    });
+    console.log("Response sent");
+  } catch (error) {
+    console.error('Error in Tutor.update:', error);
+    res.status(500).json({ message: 'Error updating tutor', error: error.message });
+  }
+},
+
+
 
 };
-
+  
 module.exports = tutorController;
