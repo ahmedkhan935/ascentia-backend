@@ -16,41 +16,56 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const tutorController = {
   create: async (req, res) => {
     try {
-      const email = req.body.email ? JSON.parse(req.body.email) : null;
-      const password = req.body.password ? JSON.parse(req.body.password) : null;
-      const name = req.body.name ? JSON.parse(req.body.name) : null;
-      const firstName = req.body.firstName
-        ? JSON.parse(req.body.firstName)
-        : null;
-      const lastName = req.body.lastName ? JSON.parse(req.body.lastName) : null;
-      const phone = req.body.phone ? JSON.parse(req.body.phone) : null;
-      const subjects = req.body.subjects ? JSON.parse(req.body.subjects) : null;
-      const category = req.body.category ? JSON.parse(req.body.category) : null;
-      const qualifications = req.body.qualifications
-        ? JSON.parse(req.body.qualifications)
-        : null;
-      const shifts = req.body.shifts ? JSON.parse(req.body.shifts) : null;
-      const degree = req.body.degree ? JSON.parse(req.body.degree) : null;
-      const university = req.body.university
-        ? JSON.parse(req.body.university)
-        : null;
-
-      const startDate = req.body.startDate
-        ? JSON.parse(req.body.startDate)
-        : null;
-      const endDate = req.body.endDate ? JSON.parse(req.body.endDate) : null;
-      const exsistingUser = await User.findOne({
+      // Parse form data or use direct values
+      const parseField = (field) => {
+        if (req.body[field]) {
+          try {
+            return typeof req.body[field] === 'string' ? JSON.parse(req.body[field]) : req.body[field];
+          } catch (e) {
+            return req.body[field]; // Return as is if not valid JSON
+          }
+        }
+        return null;
+      };
+  
+      const email = parseField('email');
+      const password = parseField('password');
+      const firstName = parseField('firstName');
+      const lastName = parseField('lastName');
+      const phone = parseField('phone');
+      const subjects = parseField('subjects');
+      const category = parseField('category'); // Now can be comma-separated string like "k-6,7-10"
+      const degree = parseField('degree');
+      const university = parseField('university');
+      const city = parseField('city');
+      const dateOfBirth = parseField('dateOfBirth');
+      const startDate = parseField('startDate');
+      const endDate = parseField('endDate');
+  
+      // Validate required fields
+      if (!email || !password || !firstName) {
+        return res.status(400).json({
+          status: "Error",
+          message: "Email, password, and first name are required fields"
+        });
+      }
+  
+      // Check if user already exists
+      const existingUser = await User.findOne({
         email: email,
       });
-      if (exsistingUser) {
+      if (existingUser) {
         return res.status(400).json({
           status: "Error",
           message: "User with this email already exists",
         });
       }
-
+  
+      // Hash password
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
+      
+      // Create new user
       const newTutor = new User({
         email,
         password: hashedPassword,
@@ -58,9 +73,10 @@ const tutorController = {
         firstName,
         lastName,
         phone,
+        dateOfBirth
       });
-
-      //create stripe account 
+  
+      // Create stripe account 
       const account = await stripe.accounts.create({
         type: "express",
       });
@@ -69,39 +85,63 @@ const tutorController = {
         refresh_url: "https://www.google.com",
         return_url: "https://www.google.com",
         type: "account_onboarding",
-
       });
-      console.log(onboardingLink);
       
+      // Create tutor profile with the categories properly formatted
+      // Looking at the model, we should use the classCategories field for multiple categories
+      // and keep the original category field as a string
       const tutorProfile = new TutorProfile({
         user: newTutor._id,
-        subjects: subjects,
-        qualifications: {
+        subjects: subjects || [], 
+        category: category, // Keep original string format
+        qualifications: [{
           degree,
           institution: university,
           startDate,
           endDate,
+        }],
+        education: {
+          university,
+          degree,
+          city,
         },
-        shifts,
-        category,
+        personalDetails: {
+          dateOfBirth
+        },
         stripeAccountId: account.id,
         stripeOnboardingLink: onboardingLink.url,
-        
       });
       
+      // If category is a comma-separated string, also populate the classCategories field
+      if (category && category.includes(',')) {
+        const categoryArray = category.split(',').map(cat => {
+          // Convert to proper format (K-6, 7-10, 11-12) based on model enum
+          if (cat === 'k-6') return 'K-6';
+          return cat;
+        });
+        tutorProfile.classCategories = categoryArray;
+      } else if (category) {
+        // Single category
+        const formattedCategory = category === 'k-6' ? 'K-6' : category;
+        tutorProfile.classCategories = [formattedCategory];
+      }
+      
+      // Save everything
       await newTutor.save();
       await tutorProfile.save();
-
+  
+      // Create activity log
       const newActivity = new Activity({
         name: "Tutor Created",
         description: `Tutor ${newTutor.firstName} ${newTutor.lastName} created`,
-        tutorId: newTutor.user,
+        tutorId: newTutor._id,
       });
       await newActivity.save();
-
-
+  
+      // Create system log
       await createLog("CREATE", "TUTOR", newTutor._id, req.user, req);
-
+  
+      // Return success response
       res.status(200).json({
         message: "Tutor created successfully",
         tutor: {
@@ -113,6 +153,7 @@ const tutorController = {
         },
       });
     } catch (error) {
+      console.error("Error creating tutor:", error);
       res
         .status(500)
         .json({ message: "Error creating tutor", error: error.message });

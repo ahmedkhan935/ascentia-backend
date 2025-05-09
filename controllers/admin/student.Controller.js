@@ -6,113 +6,109 @@ const bcrypt = require('bcryptjs');
 const Payment = require('../../models/Payment');
 const Activity = require("../../models/Activity");
 const studentController = {
-    create: async (req, res) => {
-        try {
-          const student = req.body.student
-            ? JSON.parse(req.body.student)
-            : req.body;
-          if (!student.firstName) {
-            return res
-              .status(400)
-              .json({ status: 'Error', message: 'First name is required' });
-          }
-          if (!student.password) {
-            return res
-              .status(400)
-              .json({ status: 'Error', message: 'Password is required' });
-          }
-          if (student.email) {
-            const existingUser = await User.findOne({ email: student.email });
-            if (existingUser) {
-              return res
-                .status(400)
-                .json({ status: 'Error', message: 'Email already exists' });
-            }
-          }
-          const salt = await bcrypt.genSalt(10);
-          const studentHashedPwd = await bcrypt.hash(student.password, salt);
-          const isSelfGuardian =
-            student.selfGuardian === true ||
-            student.selfGuardian === 'true';
-          const newStudentData = {
-            role:         'student',
-            firstName:    student.firstName,
-            password:     studentHashedPwd,
-            selfGuardian: isSelfGuardian,
-        };
-          if (student.email)            newStudentData.email           = student.email;
-          if (student.lastName)         newStudentData.lastName        = student.lastName;
-          if (student.phone)            newStudentData.phone           = student.phone;
-          if (student.dateOfBirth)      newStudentData.dateOfBirth     = student.dateOfBirth;
-          if (student.prefferedPayment) newStudentData.paymentSchedule = student.prefferedPayment;
+  create: async (req, res) => {
+    try {
+      const student = req.body.student
+        ? JSON.parse(req.body.student)
+        : req.body;
+      if (!student.firstName) {
+        return res
+          .status(400)
+          .json({ status: 'Error', message: 'First name is required' });
+      }
       
-          const newStudent = new User(newStudentData);
-          await newStudent.save();
-      
-          if (!isSelfGuardian && student.parent) {
-            const p = student.parent;
-            let parentUser;
-            if (p.email) {
-              parentUser = await User.findOne({ email: p.email });
-              if (!parentUser) {
-                const parentData = { role: 'parent', firstName: p.firstName };
-                if (p.lastName)  parentData.lastName  = p.lastName;
-                if (p.email)     parentData.email     = p.email;
-                if (p.phone)     parentData.phone     = p.phone;
-                if (p.password)  
-                  parentData.password = await bcrypt.hash(p.password, salt);
-      
-                parentUser = new User(parentData);
-                await parentUser.save();
-              }
-            }
-      
-            if (parentUser) {
-              let family = await Family.findOne({ parentUser: parentUser._id });
-              if (!family) {
-                family = new Family({
-                  parentUser: parentUser._id,
-                  students:   [],
-                });
-              }
-              family.students.push(newStudent._id);
-              await family.save();
-            }
-          }
-          await new Activity({
-            name:      'New Student',
-            description: `Added student ${newStudent.firstName}`,
-            studentId: newStudent._id,
-          }).save();
-      
-          await createLog(
-            'CREATE',
-            'USER',
-            newStudent._id,
-            req.user,
-            req,
-            { role: 'student' }
-          );
-      
-          res.status(200).json({
-            status:  'success',
-            message: 'Student created successfully',
-            student: {
-              _id:       newStudent._id,
-              firstName: newStudent.firstName,
-              lastName:  newStudent.lastName,
-              email:     newStudent.email,
-            },
-          });
-        } catch (error) {
-          console.error('Error creating student:', error);
-          res.status(500).json({
-            status:  'Error',
-            message: 'Error creating student',
-            error:   error.message,
-          });
+      // Check for email duplicate only if email is provided
+      if (student.email) {
+        const existingUser = await User.findOne({ email: student.email });
+        if (existingUser) {
+          return res
+            .status(400)
+            .json({ status: 'Error', message: 'Email already exists' });
         }
-      },      
+      }
+      
+      const isSelfGuardian =
+        student.selfGuardian === true ||
+        student.selfGuardian === 'true';
+      
+      const newStudentData = {
+        role: 'student',
+        firstName: student.firstName,
+        selfGuardian: isSelfGuardian,
+      };
+  
+      if (student.email)            newStudentData.email           = student.email;
+      if (student.lastName)         newStudentData.lastName        = student.lastName;
+      if (student.phone)            newStudentData.phone           = student.phone;
+      if (student.dateOfBirth)      newStudentData.dateOfBirth     = student.dateOfBirth;
+      if (student.prefferedPayment) newStudentData.paymentSchedule = student.prefferedPayment;
+  
+      const newStudent = new User(newStudentData);
+      await newStudent.save();
+  
+      if (!isSelfGuardian && student.parent) {
+        const p = student.parent;
+        let parentUser;
+        if (p.email) {
+          parentUser = await User.findOne({ email: p.email });
+          if (!parentUser) {
+            const parentData = { role: 'parent', firstName: p.firstName };
+            if (p.lastName)  parentData.lastName  = p.lastName;
+            if (p.email)     parentData.email     = p.email;
+            if (p.phone)     parentData.phone     = p.phone;
+  
+            parentUser = new User(parentData);
+            await parentUser.save();
+          }
+        }
+  
+        if (parentUser) {
+          let family = await Family.findOne({ parentUser: parentUser._id });
+          if (!family) {
+            family = new Family({
+              parentUser: parentUser._id,
+              students: [],
+            });
+          }
+          family.students.push(newStudent._id);
+          await family.save();
+        }
+      }
+      
+      await new Activity({
+        name: 'New Student',
+        description: `Added student ${newStudent.firstName}`,
+        studentId: newStudent._id,
+      }).save();
+  
+      await createLog(
+        'CREATE',
+        'USER',
+        newStudent._id,
+        req.user,
+        req,
+        { role: 'student' }
+      );
+  
+      res.status(200).json({
+        status: 'success',
+        message: 'Student created successfully',
+        student: {
+          _id: newStudent._id,
+          firstName: newStudent.firstName,
+          lastName: newStudent.lastName,
+          email: newStudent.email,
+        },
+      });
+    } catch (error) {
+      console.error('Error creating student:', error);
+      res.status(500).json({
+        status: 'Error',
+        message: 'Error creating student',
+        error: error.message,
+      });
+    }
+  },     
 
     getAll: async (req, res) => {
         try {

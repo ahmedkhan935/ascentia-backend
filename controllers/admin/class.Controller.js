@@ -170,7 +170,6 @@ const ClassController = {
         students,
         sessions,
         room,
-        frequency,
         tutorPayout,
         startDate,
         endDate,
@@ -237,7 +236,6 @@ const ClassController = {
         students,
         sessions,
         allocatedRoom: room,
-        frequency,
         tutorPayout,
         startDate,
         endDate,
@@ -297,39 +295,6 @@ const ClassController = {
         }
       }
 
-      // Create payments
-      const payments = [];
-      for (const student of students) {
-        if (frequency == "once") {
-          const payment = new Payment({
-            user: student.id,
-            amount: student.price,
-            class: savedClass._id,
-            status: "pending",
-            type: "Payment",
-            reason: "Class payment",
-            dueDate: startDate,
-          });
-          await payment.save();
-          payments.push(payment);
-        } else if (frequency == "session") {
-          //create separate payment for each session
-          for (const session of generatedSessions) {
-            const payment = new Payment({
-              user: student.id,
-              amount: student.price,
-              class: savedClass._id,
-              status: "pending",
-              type: "Payment",
-              reason: "Class Session payment",
-              dueDate: session.date,
-              classSessionId: session._id,
-            });
-            await payment.save();
-            payments.push(payment);
-          }
-        }
-      }
       const tutorUser = await TutorProfile.findOne({ _id: tutor });
 
       const tutorPayment = new Payment({
@@ -338,7 +303,7 @@ const ClassController = {
         class: savedClass._id,
         status: "pending",
         type: "Payout",
-        paymentMethod: "stripe", // or handle from request,
+        paymentMethod: "stripe",
         reason: "Tutor payout for class",
       });
       await tutorPayment.save();
@@ -386,7 +351,7 @@ const ClassController = {
         data: {
           class: savedClass,
           sessions: generatedSessions,
-          payments: [...payments, tutorPayment],
+          payments: [tutorPayment],
         },
       });
     } catch (error) {

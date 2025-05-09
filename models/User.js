@@ -1,8 +1,8 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 const userSchema = new mongoose.Schema({
-  email: { type: String,     required: function() { return this.role !== 'parent'; }  , unique: true },
-  password: { type: String,     required: function() { return this.role !== 'parent'; },},
+  email: { type: String,     required: function() { return this.role !== 'parent'&& this.role !== 'student'; }  , unique: true },
+  password: { type: String,     required: function() { return this.role !== 'parent'&& this.role !== 'student'; },},
   role: {
     type: String,
     enum: ["admin", "tutor", "student", "parent"],
