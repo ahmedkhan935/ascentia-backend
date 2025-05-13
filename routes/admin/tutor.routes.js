@@ -17,12 +17,18 @@ router.put('/:id', [authenticateJWT, isAdmin], tutorController.update);
 router.delete('/:id', [authenticateJWT, isAdmin], tutorController.delete);
 router.post("/:id/shift", [authenticateJWT, isAdmin], tutorController.addShift);
 router.delete("/:id/shift/:shiftId", [authenticateJWT, isAdmin], tutorController.removeShift);
-router.get("/:id/shift/:shiftId", [authenticateJWT, isAdmin], tutorController.getShift);
+// router.get("/:id/shift/:shiftId", [authenticateJWT, isAdmin], tutorController.getShift);
+router.get("/:id/shift", [authenticateJWT, isAdmin], tutorController.getShift);
 router.post('/:id/bonus', [authenticateJWT, isAdmin], tutorController.AddBonus);
 router.delete('/:id/bonus/:bonusId', [authenticateJWT, isAdmin], tutorController.removeBonus);
 router.get('/:id/bonus', [authenticateJWT, isAdmin], tutorController.getBonus);
 router.get('/:id/bonus/:bonusId', [authenticateJWT, isAdmin], tutorController.getBonusById);
 router.get('/:tutorId/classes-sessions', [authenticateJWT, isTutor], tutorController.getTutorClassesAndSessions);
 router.put("/update/:id", [ authenticateJWT, isAdmin ], tutorController.updateTutor  );
-
+router.get(
+    "/:profileId/sessions",
+    [authenticateJWT, isAdmin],
+    tutorController.getTutorSessions
+  );
+  
 module.exports = router;

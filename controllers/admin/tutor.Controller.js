@@ -34,7 +34,7 @@ const tutorController = {
       const lastName = parseField('lastName');
       const phone = parseField('phone');
       const subjects = parseField('subjects');
-      const category = parseField('category'); // Now can be comma-separated string like "k-6,7-10"
+      const category = parseField('category');
       const degree = parseField('degree');
       const university = parseField('university');
       const city = parseField('city');
@@ -220,7 +220,9 @@ const tutorController = {
           name: `${tutor.user.firstName} ${tutor.user.lastName}`,
           email: tutor.user.email,
           phone:      tutor.user.phone,
-          initials: `${tutor.user.firstName[0]}${tutor.user.lastName[0]}`,
+          initials: 
+          tutor.user.firstName.charAt(0) +
+          (tutor.user.lastName ? tutor.user.lastName.charAt(0) : ''),
           workHours: `${totalWorkHours.toFixed(2)} hours`,
           status: tutor.status,
           blogs: `${tutor.publishedBlogs || 0} blogs`,
@@ -440,7 +442,7 @@ const tutorController = {
     const tutorId = req.params.id;
     const day = req.query.day;
 
-    const tutor = await TutorProfile.findOne({ user: tutorId });
+    const tutor = await TutorProfile.findOne({ _id: tutorId });
     if (!tutor) {
       return res.status(404).json({ message: "Tutor not found" });
     }
@@ -607,7 +609,6 @@ const tutorController = {
   //these are some tutor routes for the tutor
   getTutorClassesAndSessions: async (req, res) => {
     try {
-      // First find the tutor profile
       const tutor = await TutorProfile.findOne({ user: req.user._id }).populate(
         "user"
       );
@@ -820,6 +821,47 @@ updateTutor: async (req, res) => {
   } catch (error) {
     console.error('Error in Tutor.update:', error);
     res.status(500).json({ message: 'Error updating tutor', error: error.message });
+  }
+},
+
+getTutorSessions: async (req, res) => {
+  try {
+    const profileId = req.params.profileId;
+
+    // 1) Verify the tutor profile exists
+    const profile = await TutorProfile.findById(profileId);
+    if (!profile) {
+      return res.status(404).json({ message: "Tutor profile not found" });
+    }
+
+    // 2) Fetch only the `sessions` field from each Class
+    const classes = await Class.find(
+      { tutor: profileId },
+      { sessions: 1 }
+    ).lean();
+
+    // 3) Flatten into one array, attaching classId if desired
+    const sessions = classes.flatMap(cls =>
+      (cls.sessions || []).map(sess => ({
+        _id:       sess._id,
+        classId:   cls._id,
+        dayOfWeek: sess.dayOfWeek,
+        startTime: sess.startTime,
+        endTime:   sess.endTime,
+      }))
+    );
+
+    // 4) Return
+    return res.json({
+      status: "success",
+      data: sessions
+    });
+  } catch (err) {
+    console.error("getTutorSessions error:", err);
+    return res.status(500).json({
+      message: "Server error",
+      error: err.message
+    });
   }
 },
 

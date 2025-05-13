@@ -273,7 +273,7 @@ const ClassController = {
                 date.toISOString().split("T")[0]
               } at ${session.startTime}-${session.endTime}`,
             });
-          }
+          }   
 
           const classSession = await createClassSession(
             savedClass._id,
@@ -559,15 +559,42 @@ const ClassController = {
   getAllSessions: async (req, res) => {
     try {
       const sessions = await ClassSession.find()
-        .populate("class")
-        .populate("room");
+        // only the top‐level session props we care about
+        .select('date startTime endTime status class room')
+        // populate and limit the class sub‐doc to the essentials
+        .populate({
+          path: 'class',
+          select: 'subject startDate endDate tutor students',
+          populate: [
+            // pull in just the tutor’s User info
+            {
+              path: 'tutor',
+              model: 'TutorProfile',
+              select: 'user',
+              populate: {
+                path: 'user',
+                model: 'User',
+                select: 'firstName lastName email'
+              }
+            },
+            // pull in just each student’s User info
+            {
+              path: 'students.id',
+              model: 'User',
+              select: 'firstName lastName email'
+            }
+          ]
+        })
+        // populate only the room’s name & description
+        .populate('room', 'name description')
+        .lean();
 
-      res.status(200).json({ sessions, status: "success" });
+      return res.status(200).json({ status: 'success', sessions });
     } catch (error) {
-      res.status(500).json({
-        message: "Error fetching sessions",
-        error: error.message,
-        status: "Error",
+      return res.status(500).json({
+        status: 'error',
+        message: 'Error fetching sessions',
+        error: error.message
       });
     }
   },

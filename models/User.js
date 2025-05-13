@@ -9,7 +9,7 @@ const userSchema = new mongoose.Schema({
     required: true,
   },
   firstName: { type: String, required: true },
-  lastName: { type: String, required: true },
+  lastName: { type: String, required: function() { return this.role !== 'parent'&& this.role !== 'student'&& this.role!='tutor';},},
   phone: String,
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
