@@ -26,6 +26,11 @@ router.get('/:id/bonus/:bonusId', [authenticateJWT, isAdmin], tutorController.ge
 router.get('/:tutorId/classes-sessions', [authenticateJWT, isTutor], tutorController.getTutorClassesAndSessions);
 router.put("/update/:id", [ authenticateJWT, isAdmin ], tutorController.updateTutor  );
 router.get(
+  "/:profileId/sessionsConflict",
+  [authenticateJWT, isAdmin],
+  tutorController.getTutorSessionsforconflicts
+);
+router.get(
     "/:profileId/sessions",
     [authenticateJWT, isAdmin],
     tutorController.getTutorSessions

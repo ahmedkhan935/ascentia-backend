@@ -40,4 +40,15 @@ router.get(
   [authenticateJWT, isAdmin],
   ClassController.getDashboardStats
 );
+
+router.post(
+  "/cancel-session",
+  [authenticateJWT,isAdmin],
+  ClassController.cancelSession
+);
+router.post(
+  "/reschedule-session",
+  [authenticateJWT,isAdmin],
+  ClassController.rescheduleSession
+);
 module.exports = router;

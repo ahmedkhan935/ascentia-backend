@@ -722,6 +722,138 @@ const ClassController = {
       });
     }
   },
+  cancelSession: async (req, res) => {
+    try {
+      const { sessionId, reason } = req.body;
+      // assume you have req.user._id from your auth middleware
+      const userId = req.user && req.user._id;
+
+      const session = await ClassSession.findById(sessionId);
+      if (!session) {
+        return res.status(404).json({ status: "failed", message: "Session not found" });
+      }
+
+      // remove any room booking
+      if (session.room) {
+        await Room.findByIdAndUpdate(session.room, {
+          $pull: { bookings: { classSession: session._id } }
+        });
+      }
+
+      // mark cancelled
+      session.status             = "cancelled";
+      session.cancellationReason = reason || "";
+      session.cancelledBy        = userId || null;
+      session.cancelledAt        = new Date();
+      await session.save();
+
+      // log activity
+      await Activity.create({
+        name:    "Session Cancelled",
+        description: 
+          `Session for class ${session.class} on ` +
+          `${session.date.toISOString().split("T")[0]} ` +
+          `(${session.startTime}-${session.endTime}) cancelled` +
+          (reason ? `: ${reason}` : ""),
+        class:        session.class,
+        classSession: session._id,
+        user:         userId
+      });
+
+      return res.status(200).json({ status: "success", session });
+    } catch (err) {
+      console.error("cancelSession Error:", err);
+      return res.status(500).json({ status: "failed", message: err.message });
+    }
+  },
+
+
+  // RESCHEDULE a session: create a new one, link both docs
+  rescheduleSession: async (req, res) => {
+    try {
+      const { sessionId, newDate, newStartTime, newEndTime } = req.body;
+      const userId = req.user && req.user._id;
+  
+      // 1) Load the existing session
+      const session = await ClassSession.findById(sessionId);
+      if (!session) {
+        return res.status(404).json({ status: "failed", message: "Session not found" });
+      }
+  
+      // 2) Load the parent class to know tutor & room
+      const classDoc = await Class.findById(session.class);
+      if (!classDoc) {
+        return res.status(404).json({ status: "failed", message: "Parent class not found" });
+      }
+      const tutorId = classDoc.tutor;
+      const roomId  = session.room;
+  
+      // 3) Remove the old room booking
+      if (roomId) {
+        await Room.findByIdAndUpdate(roomId, {
+          $pull: { bookings: { classSession: session._id } }
+        });
+      }
+  
+      // 4) Validate tutor & room availability on the new slot
+      const okTutor = await checkTutorAvailability(tutorId, newDate, newStartTime, newEndTime);
+      if (!okTutor) {
+        return res.status(400).json({ status: "failed", message: "Tutor unavailable at that time" });
+      }
+      const okRoom = await checkRoomAvailability(roomId, newDate, newStartTime, newEndTime);
+      if (!okRoom) {
+        return res.status(400).json({ status: "failed", message: "Room unavailable at that time" });
+      }
+  
+      // 5) Record old values for activity log
+      const oldDate      = session.date;
+      const oldStartTime = session.startTime;
+      const oldEndTime   = session.endTime;
+  
+      // 6) Update the session in-place
+      session.date          = new Date(newDate);
+      session.startTime     = newStartTime;
+      session.endTime       = newEndTime;
+      session.status        = "rescheduled";
+      // point back to itself for clarity
+      session.rescheduledFrom = session.rescheduledFrom || session._id;
+      session.rescheduledTo   = session._id;
+      await session.save();
+  
+      // 7) Re-book the room under the new date/time
+      if (roomId) {
+        await Room.findByIdAndUpdate(roomId, {
+          $push: {
+            bookings: {
+              date:         session.date,
+              startTime:    newStartTime,
+              endTime:      newEndTime,
+              class:        session.class,
+              classSession: session._id
+            }
+          }
+        });
+      }
+  
+      // 8) Log activity
+      await Activity.create({
+        name:    "Session Rescheduled",
+        description:
+          `Session for class ${session.class} moved from ` +
+          `${oldDate.toISOString().split("T")[0]} (${oldStartTime}-${oldEndTime}) ` +
+          `to ${newDate} (${newStartTime}-${newEndTime})`,
+        class:        session.class,
+        classSession: session._id,
+        user:         userId
+      });
+  
+      return res.status(200).json({ status: "success", session });
+    } catch (err) {
+      console.error("rescheduleSession Error:", err);
+      return res.status(500).json({ status: "failed", message: err.message });
+    }
+  },
+  
   getDashboardStats: async (req, res) => {
     try {
       // Get the date range (last 7 days)

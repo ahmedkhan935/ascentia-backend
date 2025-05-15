@@ -824,7 +824,7 @@ updateTutor: async (req, res) => {
   }
 },
 
-getTutorSessions: async (req, res) => {
+getTutorSessionsforconflicts: async (req, res) => {
   try {
     const profileId = req.params.profileId;
 
@@ -865,7 +865,57 @@ getTutorSessions: async (req, res) => {
   }
 },
 
+getTutorSessions:async (req, res) => {
+  try {
+    const profileId = req.params.profileId;
 
+    // 1) Verify the tutor profile exists
+    const profile = await TutorProfile.findById(profileId);
+    if (!profile) {
+      return res.status(404).json({ message: "Tutor profile not found" });
+    }
+
+    // 2) Get all Class IDs for this tutor
+    const classIds = await Class.find({ tutor: profileId })
+                                .distinct("_id");
+
+    // 3) Find all ClassSession docs for those classes
+    const sessions = await ClassSession.find({
+      class: { $in: classIds }
+    })
+    // -- optional: populate back to the Class to grab subject, price, etc.
+    .populate({
+      path: "class",
+      select: "subject type price tutor"
+    })
+    // -- optional: populate attendance.student and markedBy
+    .populate({
+      path: "attendance.student attendance.markedBy",
+      select: "username email"
+    })
+    // -- optional: populate feedback.student
+    .populate({
+      path: "feedback.student",
+      select: "username"
+    })
+    // -- optional: populate room and cancellation info
+    .populate("room cancelledBy rescheduledTo rescheduledFrom")
+    .lean();
+
+    // 4) Return the full ClassSession list
+    return res.json({
+      status: "success",
+      data:   sessions
+    });
+
+  } catch (err) {
+    console.error("getTutorSessions error:", err);
+    return res.status(500).json({
+      message: "Server error",
+      error:   err.message
+    });
+  }
+},
 
 };
   
