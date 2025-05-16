@@ -1,4 +1,6 @@
 const User = require('../../models/User');
+const Lead = require("../../models/Lead");
+
 const { createLog } = require('../../middleware/logger');
 const Family = require('../../models/Family');
 const Class = require('../../models/Class');
@@ -338,6 +340,133 @@ const studentController = {
             .status(500)
             .json({ status: 'Error', message: 'Error updating student', error: error.message });
         }
+      },
+      createLead: async (req, res, next) => {
+        try {
+          const { firstName, lastName, phone, address, email, callNotes = [], leadStatus = "warm" } = req.body;
+          
+          if (!firstName || !lastName || !phone || !address || !email) {
+            return res.status(400).json({ 
+              status: 'error', 
+              message: "firstName, lastName, phone, address and email are required" 
+            });
+          }
+          
+          if (!["hot","warm","cold"].includes(leadStatus)) {
+            return res.status(400).json({ 
+              status: 'error', 
+              message: "leadStatus must be 'hot', 'warm', or 'cold'" 
+            });
+          }
+          
+          const lead = await Lead.create({ firstName, lastName, phone, address, email, leadStatus, callNotes });
+          res.status(201).json({ status: 'success', data: lead });
+        } catch (err) {
+          next(err);
+        }
+      },
+    
+      getLeads: async (req, res, next) => {
+        try {
+          const filters = req.query;
+          const leads = await Lead.find(filters).sort({ createdAt: -1 });
+          res.status(200).json({ status: 'success', data: leads });
+        } catch (err) {
+          next(err);
+        }
+      },
+    
+      getLeadById: async (req, res, next) => {
+        try {
+          const lead = await Lead.findById(req.params.id);
+          if (!lead) throw new Error("Lead not found");
+          res.status(200).json({ status: 'success', data: lead });
+        } catch (err) { next(err); }
+      },
+    
+      updateLead: async (req, res, next) => {
+        try {
+          const allowed = ["firstName","lastName","phone","address","email","leadStatus"];
+          const updates = {};
+          allowed.forEach(f => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
+          const lead = await Lead.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
+          if (!lead) throw new Error("Lead not found");
+          res.status(200).json({ status: 'success', data: lead });
+        } catch (err) { next(err); }
+      },
+    
+      addLeadCallNote: async (req, res, next) => {
+        try {
+          const { content } = req.body;
+          const note = { content, createdBy: req.user._id };
+          const lead = await Lead.findByIdAndUpdate(
+            req.params.id,
+            { $push: { callNotes: note } },
+            { new: true, runValidators: true }
+          );
+          if (!lead) throw new Error("Lead not found");
+          res.status(200).json({ status: 'success', data: lead });
+        } catch (err) { next(err); }
+      },
+    
+      updateLeadStatus: async (req, res, next) => {
+        try {
+          const { status } = req.body;
+          if (!["hot","warm","cold","lost","converted"].includes(status)) {
+            throw new Error("Invalid lead status");
+          }
+          const lead = await Lead.findByIdAndUpdate(
+            req.params.id,
+            { leadStatus: status },
+            { new: true }
+          );
+          if (!lead) throw new Error("Lead not found");
+          res.status(200).json({ status: 'success', data: lead });
+        } catch (err) { next(err); }
+      },
+    
+      convertLeadToStudent: async (req, res, next) => {
+        try {
+          const lead = await Lead.findById(req.params.id);
+          if (!lead) throw new Error("Lead not found");
+          const studentData = {
+            email: lead.email,
+            password: "changeme123",
+            role: "student",
+            firstName: lead.firstName,
+            lastName: lead.lastName,
+            phone: lead.phone,
+            address: lead.address,
+            leadRef: lead._id,
+            ...req.body.studentData
+          };
+          const student = await User.create(studentData);
+          lead.leadStatus = "converted";
+          await lead.save();
+          res.status(200).json({ status: 'success', data: student });
+        } catch (err) { next(err); }
+      },
+    
+      rejectLead: async (req, res, next) => {
+        try {
+          const { reason } = req.body;
+          const lead = await Lead.findById(req.params.id);
+          if (!lead) throw new Error("Lead not found");
+          lead.leadStatus = "lost";
+          lead.callNotes.push({ content: `Rejected: ${reason}`, createdBy: req.user._id });
+          await lead.save();
+          res.status(200).json({ status: 'success', data: lead });
+        } catch (err) { next(err); }
+      },
+    
+      deleteLead: async (req, res, next) => {
+        try {
+          const lead = await Lead.findByIdAndDelete(req.params.id);
+          if (!lead) throw new Error("Lead not found");
+          res.status(200).json({ status: 'success', data: { message: 'Lead deleted successfully' } });
+        } catch (err) { next(err); }
       }
-};
+    };
+  
+
 exports.studentController = studentController;
