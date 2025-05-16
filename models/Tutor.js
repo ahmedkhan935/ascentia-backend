@@ -55,7 +55,7 @@ const tutorProfileSchema = new mongoose.Schema(
     shifts: {
       type: [
         {
-          //0 is Sunday, 1 is Monday, 2 is Tuesday, etc.
+          // 0 is Sunday, 1 is Monday, 2 is Tuesday, etc.
           dayOfWeek: {
             type: Number,
             required: true,
@@ -72,9 +72,60 @@ const tutorProfileSchema = new mongoose.Schema(
             required: true,
             match: /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/,
           },
+          // Add recurrence field
+          recurrence: {
+            type: String,
+            enum: ["weekly", "fortnightly", "one-off"],
+            default: "weekly",
+          },
+          // Add trial class marker
+          isTrial: {
+            type: Boolean,
+            default: false,
+          },
+          // Add specific date for one-off shifts
+          specificDate: {
+            type: Date,
+            // Required only if recurrence is one-off
+            required: function() {
+              return this.recurrence === 'one-off';
+            },
+          },
         },
       ],
       default: [],
+    },
+    location: {
+      address: {
+        type: String,
+        trim: true
+      },
+      coordinates: {
+        latitude: {
+          type: Number,
+          // Validate that latitude is a real number and in valid range
+          validate: {
+            validator: function(val) {
+              // Accept null/undefined or valid number between -90 and 90
+              return val === null || val === undefined || 
+                     (!isNaN(val) && val >= -90 && val <= 90);
+            },
+            message: 'Latitude must be a valid number between -90 and 90'
+          }
+        },
+        longitude: {
+          type: Number,
+          // Validate that longitude is a real number and in valid range
+          validate: {
+            validator: function(val) {
+              // Accept null/undefined or valid number between -180 and 180
+              return val === null || val === undefined || 
+                     (!isNaN(val) && val >= -180 && val <= 180);
+            },
+            message: 'Longitude must be a valid number between -180 and 180'
+          }
+        }
+      }
     },
     scheduleExceptions: [scheduleExceptionSchema],
     status: {

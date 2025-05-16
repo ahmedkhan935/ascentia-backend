@@ -41,6 +41,22 @@ const tutorController = {
       const dateOfBirth = parseField('dateOfBirth');
       const startDate = parseField('startDate');
       const endDate = parseField('endDate');
+      
+      // Parse new location fields from frontend - with validation
+      const address = parseField('address');
+      let latitude = parseField('latitude');
+      let longitude = parseField('longitude');
+      
+      // Convert to numbers if possible and validate
+      if (latitude) {
+        latitude = Number(latitude);
+        if (isNaN(latitude)) latitude = null; // Set to null if not a valid number
+      }
+      
+      if (longitude) {
+        longitude = Number(longitude);
+        if (isNaN(longitude)) longitude = null; // Set to null if not a valid number
+      }
   
       // Validate required fields
       if (!email || !password || !firstName) {
@@ -88,9 +104,7 @@ const tutorController = {
       });
       
       // Create tutor profile with the categories properly formatted
-      // Looking at the model, we should use the classCategories field for multiple categories
-      // and keep the original category field as a string
-      const tutorProfile = new TutorProfile({
+      const tutorProfileData = {
         user: newTutor._id,
         subjects: subjects || [], 
         category: category, // Keep original string format
@@ -110,7 +124,24 @@ const tutorController = {
         },
         stripeAccountId: account.id,
         stripeOnboardingLink: onboardingLink.url,
-      });
+      };
+      
+      // Only add location data if we have valid information
+      if (address) {
+        tutorProfileData.location = {
+          address
+        };
+        
+        // Only add coordinates if we have valid lat/long
+        if (latitude !== null && longitude !== null) {
+          tutorProfileData.location.coordinates = {
+            latitude,
+            longitude
+          };
+        }
+      }
+      
+      const tutorProfile = new TutorProfile(tutorProfileData);
       
       // If category is a comma-separated string, also populate the classCategories field
       if (category && category.includes(',')) {
@@ -353,83 +384,167 @@ const tutorController = {
         .json({ message: "Error deleting tutor", error: error.message });
     }
   },
+
+
+
   addShift: async (req, res) => {
     try {
       const tutorId = req.params.id;
-      const { shift } = req.body;
-
+      const { dayOfWeek, startTime, endTime, recurrence = "weekly", isTrial = false, specificDate = null } = req.body;
+      
+      // Create shift object
+      const shift = {
+        dayOfWeek,
+        startTime,
+        endTime,
+        recurrence,
+        isTrial
+      };
+      
+      // Add specificDate if it's a one-off shift
+      if (recurrence === "one-off" && specificDate) {
+        shift.specificDate = new Date(specificDate);
+      }
+  
       const tutor = await TutorProfile.findOne({ _id: tutorId }).populate("user");
       if (!tutor) {
         return res.status(404).json({ message: "Tutor not found" });
       }
+      
       if (!tutor.shifts) {
         tutor.shifts = [];
       }
-
-      // Check for collision with existing shifts
+  
+      // Check for collision with existing shifts based on recurrence
       const isCollision = tutor.shifts.some((existingShift) => {
-        if (existingShift.dayOfWeek !== shift.dayOfWeek) {
+        // For one-off shifts, only check for collision if on the same day
+        if (recurrence === "one-off" && existingShift.recurrence === "one-off") {
+          // Compare dates for one-off shifts
+          const existingDate = existingShift.specificDate ? new Date(existingShift.specificDate).toDateString() : null;
+          const newDate = specificDate ? new Date(specificDate).toDateString() : null;
+          
+          // If dates are different, no collision
+          if (existingDate !== newDate) {
+            return false;
+          }
+        } else if (recurrence === "one-off" || existingShift.recurrence === "one-off") {
+          // One is one-off and the other is recurring, no collision
+          return false;
+        } else if (existingShift.dayOfWeek !== dayOfWeek) {
+          // Different days of the week, no collision
           return false;
         }
+        
+        // If we got here, we need to check time collision
         const [existingStartHour, existingStartMinute] = existingShift.startTime
           .split(":")
           .map(Number);
         const [existingEndHour, existingEndMinute] = existingShift.endTime
           .split(":")
           .map(Number);
-        const [newStartHour, newStartMinute] = shift.startTime
+        const [newStartHour, newStartMinute] = startTime
           .split(":")
           .map(Number);
-        const [newEndHour, newEndMinute] = shift.endTime.split(":").map(Number);
-
+        const [newEndHour, newEndMinute] = endTime.split(":").map(Number);
+  
         const existingStartTime = existingStartHour * 60 + existingStartMinute;
         const existingEndTime = existingEndHour * 60 + existingEndMinute;
         const newStartTime = newStartHour * 60 + newStartMinute;
         const newEndTime = newEndHour * 60 + newEndMinute;
-
+  
+        // Check for time overlap
         return newStartTime < existingEndTime && newEndTime > existingStartTime;
       });
-
+  
       if (isCollision) {
         return res
           .status(400)
           .json({ message: "Shift time conflicts with an existing shift" });
       }
-
+  
       tutor.shifts.push(shift);
       await tutor.save();
+      
+      // Create activity log with detailed information
+      const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      let activityDescription = `${recurrence === "weekly" ? "Weekly" : recurrence === "fortnightly" ? "Fortnightly" : "One-off"}`;
+      
+      if (recurrence === "one-off" && specificDate) {
+        const formattedDate = new Date(specificDate).toLocaleDateString();
+        activityDescription += ` shift for ${formattedDate}`;
+      } else {
+        activityDescription += ` shift for ${days[dayOfWeek]}`;
+      }
+      
+      activityDescription += ` ${startTime} - ${endTime} added for tutor ${tutor.user.firstName} ${tutor.user.lastName}`;
+      
+      if (isTrial) {
+        activityDescription += " (Trial Class)";
+      }
+      
       const newActivity = new Activity({
         name: "Shift Added",
-        description: `Shift for ${days[shift.dayOfWeek]} ${shift.startTime} - ${shift.endTime} added for tutor ${tutor.user.firstName} ${tutor.user.lastName}`,
+        description: activityDescription,
         tutorId: tutor.user._id,
       });
       await newActivity.save();
-
-      res.json({ message: "Shift added successfully" });
+  
+      res.json({ 
+        message: "Shift added successfully",
+        shift: tutor.shifts[tutor.shifts.length - 1] 
+      });
     } catch (error) {
       res
         .status(500)
         .json({ message: "Error adding shift", error: error.message });
     }
   },
+  
   removeShift: async (req, res) => {
     try {
       const tutorId = req.params.id;
       const shiftId = req.params.shiftId;
       const tutor = await TutorProfile.findOne({ _id: tutorId }).populate("user");
+      
       if (!tutor) {
         return res.status(404).json({ message: "Tutor not found" });
       }
+      
+      // Find the shift before removing it (for activity log)
+      const shiftToRemove = tutor.shifts.find(shift => shift._id.toString() === shiftId);
+      
       tutor.shifts = tutor.shifts.filter(
         (shift) => shift._id.toString() !== shiftId
       );
+      
       await tutor.save();
+      
+      // Create more detailed activity log
+      let activityDescription = `Shift removed for tutor ${tutor.user.firstName} ${tutor.user.lastName}`;
+      
+      if (shiftToRemove) {
+        const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        
+        if (shiftToRemove.recurrence === "one-off" && shiftToRemove.specificDate) {
+          const formattedDate = new Date(shiftToRemove.specificDate).toLocaleDateString();
+          activityDescription = `One-off shift for ${formattedDate} (${shiftToRemove.startTime} - ${shiftToRemove.endTime}) removed`;
+        } else {
+          activityDescription = `${shiftToRemove.recurrence === "weekly" ? "Weekly" : "Fortnightly"} shift for ${days[shiftToRemove.dayOfWeek]} (${shiftToRemove.startTime} - ${shiftToRemove.endTime}) removed`;
+        }
+        
+        if (shiftToRemove.isTrial) {
+          activityDescription += " (Trial Class)";
+        }
+        
+        activityDescription += ` for tutor ${tutor.user.firstName} ${tutor.user.lastName}`;
+      }
+      
       const newActivity = new Activity({
         name: "Shift Removed",
-        description: `Shift removed for tutor ${tutor.user.firstName} ${tutor.user.lastName}`,
+        description: activityDescription,
         tutorId: tutor.user._id,
       });
-
+      
       await newActivity.save();
       res.json({ message: "Shift removed successfully" });
     } catch (error) {
@@ -438,23 +553,153 @@ const tutorController = {
         .json({ message: "Error removing shift", error: error.message });
     }
   },
+  
   getShift: async (req, res) => {
-    const tutorId = req.params.id;
-    const day = req.query.day;
-
-    const tutor = await TutorProfile.findOne({ _id: tutorId });
-    if (!tutor) {
-      return res.status(404).json({ message: "Tutor not found" });
+    try {
+      const tutorId = req.params.id;
+      const day = req.query.day ? parseInt(req.query.day) : null;
+      const recurrence = req.query.recurrence;
+      const isTrial = req.query.isTrial === 'true';
+      const date = req.query.date;
+      
+      const tutor = await TutorProfile.findOne({ _id: tutorId });
+      if (!tutor) {
+        return res.status(404).json({ message: "Tutor not found" });
+      }
+      
+      if (!tutor.shifts || tutor.shifts.length === 0) {
+        return res.json([]);
+      }
+      
+      // Apply filters if provided
+      let filteredShifts = [...tutor.shifts];
+      
+      if (day !== null) {
+        filteredShifts = filteredShifts.filter(shift => shift.dayOfWeek === day);
+      }
+      
+      if (recurrence) {
+        filteredShifts = filteredShifts.filter(shift => shift.recurrence === recurrence);
+      }
+      
+      if (req.query.isTrial !== undefined) {
+        filteredShifts = filteredShifts.filter(shift => shift.isTrial === isTrial);
+      }
+      
+      if (date) {
+        const searchDate = new Date(date).toDateString();
+        filteredShifts = filteredShifts.filter(shift => {
+          if (shift.recurrence === "one-off" && shift.specificDate) {
+            return new Date(shift.specificDate).toDateString() === searchDate;
+          }
+          return false;
+        });
+      }
+      
+      return res.json(filteredShifts);
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: "Error getting shifts", error: error.message });
     }
-    let shift;
-    shift = tutor.shifts;
-    if (day) {
-      shift = tutor.shifts.find((s) => s.dayOfWeek === day);
-    }
-
-    return res.json(shift);
   },
-  AddBonus: async (req, res) => {
+  
+  
+  /**
+   * Helper method to update a tutor shift
+   */
+  updateShift: async (req, res) => {
+    try {
+      const tutorId = req.params.id;
+      const shiftId = req.params.shiftId;
+      const { dayOfWeek, startTime, endTime, recurrence, isTrial, specificDate } = req.body;
+      
+      const tutor = await TutorProfile.findOne({ _id: tutorId }).populate("user");
+      if (!tutor) {
+        return res.status(404).json({ message: "Tutor not found" });
+      }
+      
+      // Find the shift index
+      const shiftIndex = tutor.shifts.findIndex(shift => shift._id.toString() === shiftId);
+      if (shiftIndex === -1) {
+        return res.status(404).json({ message: "Shift not found" });
+      }
+      
+      // Store old shift for activity log
+      const oldShift = { ...tutor.shifts[shiftIndex]._doc };
+      
+      // Update shift fields
+      if (dayOfWeek !== undefined) tutor.shifts[shiftIndex].dayOfWeek = dayOfWeek;
+      if (startTime) tutor.shifts[shiftIndex].startTime = startTime;
+      if (endTime) tutor.shifts[shiftIndex].endTime = endTime;
+      if (recurrence) tutor.shifts[shiftIndex].recurrence = recurrence;
+      if (isTrial !== undefined) tutor.shifts[shiftIndex].isTrial = isTrial;
+      
+      // Handle specificDate for one-off shifts
+      if (recurrence === "one-off") {
+        if (specificDate) {
+          tutor.shifts[shiftIndex].specificDate = new Date(specificDate);
+        }
+      } else {
+        // Remove specificDate if not one-off
+        tutor.shifts[shiftIndex].specificDate = undefined;
+      }
+      
+      // Save the updated tutor
+      await tutor.save();
+      
+      // Create activity log entry
+      const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      let activityDescription = `Shift updated for tutor ${tutor.user.firstName} ${tutor.user.lastName}: `;
+      
+      // Describe the changes
+      const changes = [];
+      
+      if (oldShift.startTime !== startTime || oldShift.endTime !== endTime) {
+        changes.push(`Time changed from ${oldShift.startTime}-${oldShift.endTime} to ${startTime}-${endTime}`);
+      }
+      
+      if (oldShift.recurrence !== recurrence) {
+        changes.push(`Recurrence changed from ${oldShift.recurrence || "weekly"} to ${recurrence}`);
+      }
+      
+      if (oldShift.isTrial !== isTrial) {
+        changes.push(`${isTrial ? "Marked" : "Unmarked"} as trial class`);
+      }
+      
+      if (oldShift.dayOfWeek !== dayOfWeek && dayOfWeek !== undefined) {
+        changes.push(`Day changed from ${days[oldShift.dayOfWeek]} to ${days[dayOfWeek]}`);
+      }
+      
+      if (recurrence === "one-off" && specificDate) {
+        const oldDate = oldShift.specificDate ? new Date(oldShift.specificDate).toLocaleDateString() : "none";
+        const newDate = new Date(specificDate).toLocaleDateString();
+        if (oldDate !== newDate) {
+          changes.push(`Date changed from ${oldDate} to ${newDate}`);
+        }
+      }
+      
+      activityDescription += changes.join(", ");
+      
+      const newActivity = new Activity({
+        name: "Shift Updated",
+        description: activityDescription,
+        tutorId: tutor.user._id,
+      });
+      
+      await newActivity.save();
+      
+      res.json({ 
+        message: "Shift updated successfully",
+        shift: tutor.shifts[shiftIndex]
+      });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: "Error updating shift", error: error.message });
+    }
+  },
+  AddBonus: async (req, res) => { 
     try {
       const tutorId = req.params.id;
       const { bonus } = req.body;
@@ -694,6 +939,53 @@ const tutorController = {
       res.status(500).json({status:"failed",message:"Error fetching payments",error:error.message});
     }
   },
+  updatePaymentStatus: async (req, res) => {
+    const { id }      = req.params;
+    const { status }  = req.body;
+
+    // 1) Validate
+    if (!status) {
+      return res
+        .status(400)
+        .json({ status: "failed", message: "New status is required in the request body." });
+    }
+
+    // Optional: whitelist allowed statuses
+    const allowed = ["pending", "completed", "failed"];
+    if (!allowed.includes(status)) {
+      return res
+        .status(400)
+        .json({ status: "failed", message: `Status must be one of: ${allowed.join(", ")}` });
+    }
+
+    try {
+      // 2) Find and update
+      const updated = await Payment.findByIdAndUpdate(
+        id,
+        { $set: { status } },
+        { new: true }
+      ).populate('user');
+
+      if (!updated) {
+        return res
+          .status(404)
+          .json({ status: "failed", message: "Payment not found." });
+      }
+
+      // 3) Return the updated document
+      return res.json({
+        status:  "success",
+        message: `Payment status updated to "${status}".`,
+        payment: updated
+      });
+    } catch (err) {
+      console.error("Error updating payment status:", err);
+      return res
+        .status(500)
+        .json({ status: "failed", message: "Internal Server Error", error: err.message });
+    }
+  },
+  
 updateTutor: async (req, res) => {
   console.log("Update Tutor Request Body:", req.body);
 

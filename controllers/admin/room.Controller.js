@@ -191,4 +191,5 @@ const RoomController = {
         }
     }
 };
+
 module.exports = RoomController;

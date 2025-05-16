@@ -8,6 +8,7 @@ const classSchema = new mongoose.Schema({
     TermWise: Number,
   },
   tutorPayout: Number,
+  classCost:Number,
   sessions:{type:[{
     dayOfWeek:Number,
     startTime:String,

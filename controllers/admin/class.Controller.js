@@ -171,6 +171,7 @@ const ClassController = {
         sessions,
         room,
         tutorPayout,
+        classCost,
         startDate,
         endDate,
       } = req.body;
@@ -237,6 +238,7 @@ const ClassController = {
         sessions,
         allocatedRoom: room,
         tutorPayout,
+        classCost,
         startDate,
         endDate,
         type,
@@ -853,6 +855,8 @@ const ClassController = {
       return res.status(500).json({ status: "failed", message: err.message });
     }
   },
+
+
   
   getDashboardStats: async (req, res) => {
     try {
@@ -1027,7 +1031,13 @@ const ClassController = {
       });
     }
   },
+
+
+
 };
+
+
+
 
 const getClassSessions = async (req, res) => {
   try {

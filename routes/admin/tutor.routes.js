@@ -17,7 +17,6 @@ router.put('/:id', [authenticateJWT, isAdmin], tutorController.update);
 router.delete('/:id', [authenticateJWT, isAdmin], tutorController.delete);
 router.post("/:id/shift", [authenticateJWT, isAdmin], tutorController.addShift);
 router.delete("/:id/shift/:shiftId", [authenticateJWT, isAdmin], tutorController.removeShift);
-// router.get("/:id/shift/:shiftId", [authenticateJWT, isAdmin], tutorController.getShift);
 router.get("/:id/shift", [authenticateJWT, isAdmin], tutorController.getShift);
 router.post('/:id/bonus', [authenticateJWT, isAdmin], tutorController.AddBonus);
 router.delete('/:id/bonus/:bonusId', [authenticateJWT, isAdmin], tutorController.removeBonus);
@@ -35,5 +34,6 @@ router.get(
     [authenticateJWT, isAdmin],
     tutorController.getTutorSessions
   );
-  
+router.put('/payment/:id',[authenticateJWT,isAdmin], tutorController.updatePaymentStatus);
+
 module.exports = router;
