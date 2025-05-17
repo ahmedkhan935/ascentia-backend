@@ -14,6 +14,11 @@ router.get('/requests/pending', [authenticateJWT, isAdmin], tutorController.getP
 router.get('/requests/all', [authenticateJWT, isAdmin], tutorController.getAllRequests);
 router.get('/:id', [authenticateJWT, isAdmin], tutorController.getById);
 router.put('/:id', [authenticateJWT, isAdmin], tutorController.update);
+router.patch(
+  "/:id/status",
+  [authenticateJWT, isAdmin],
+  tutorController.changeStatus
+);
 router.delete('/:id', [authenticateJWT, isAdmin], tutorController.delete);
 router.post("/:id/shift", [authenticateJWT, isAdmin], tutorController.addShift);
 router.delete("/:id/shift/:shiftId", [authenticateJWT, isAdmin], tutorController.removeShift);
@@ -35,6 +40,7 @@ router.get(
     tutorController.getTutorSessions
   );
 router.put('/payment/:id',[authenticateJWT,isAdmin], tutorController.updatePaymentStatus);
+
 
 
 module.exports = router;

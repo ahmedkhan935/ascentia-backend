@@ -5,13 +5,8 @@ const studentController =
 const {
   authenticateJWT,
   isAdmin,
-  isStudent,
 } = require("../../middleware/auth");
 const upload = require("../../middleware/upload");
-
-// IMPORTANT: Place specific routes before parameterized routes to avoid conflicts
-// So "/update/:id" must come before "/:id"
-// And "/getAllLeads" must come before "/:id" 
 
 // Create student
 router.post(

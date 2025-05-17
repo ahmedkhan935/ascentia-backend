@@ -260,6 +260,9 @@ const tutorController = {
           credit: tutor.creditBalance || 0,
           education: tutor.education,
           subjects: tutor.subjects,
+          address: tutor.location?.address || "",
+          latitude: tutor.location?.coordinates?.latitude ?? null,
+          longitude: tutor.location?.coordinates?.longitude ?? null,
         };
       });
 
@@ -359,6 +362,54 @@ const tutorController = {
       res
         .status(500)
         .json({ message: "Error updating tutor", error: error.message });
+    }
+  },
+  changeStatus: async (req, res) => {
+    try {
+      const { id }    = req.params;          // TutorProfile _id
+      let   { status } = req.body;           // desired status
+  
+      if (!status)
+        return res.status(400).json({ message: "Status is required." });
+  
+      // Accept the word “deactivated” from the UI and map it to the schema value “inactive”
+      if (status === "deactivated") status = "inactive";
+  
+      // Whitelist against the enum in the schema
+      const allowed = ["active", "inactive", "suspended"];
+      if (!allowed.includes(status))
+        return res
+          .status(400)
+          .json({ message: `Status must be one of: ${allowed.join(", ")}` });
+  
+      // Update and return the fresh document
+      const profile = await TutorProfile.findByIdAndUpdate(
+        id,
+        { $set: { status } },
+        { new: true }
+      ).populate("user", "firstName lastName email");
+  
+      if (!profile)
+        return res.status(404).json({ message: "Tutor profile not found." });
+  
+      // Activity & system logs (optional but consistent with the rest of your controller)
+      const activity = new Activity({
+        name:        "Tutor Status Changed",
+        description: `Status set to "${status}" for ${profile.user.firstName} ${profile.user.lastName}`,
+        tutorId:     profile.user._id,
+      });
+      await activity.save();
+      await createLog("UPDATE", "TUTOR", profile._id, req.user, req);
+  
+      return res.json({
+        message: "Status updated successfully",
+        tutor:   profile,
+      });
+    } catch (err) {
+      console.error("changeStatus error:", err);
+      return res
+        .status(500)
+        .json({ message: "Server error", error: err.message });
     }
   },
 
