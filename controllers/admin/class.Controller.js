@@ -271,11 +271,10 @@ const ClassController = {
 
             return res.status(400).json({
               status: "failed",
-              message: `Tutor has a scheduling conflict on ${
-                date.toISOString().split("T")[0]
-              } at ${session.startTime}-${session.endTime}`,
+              message: `Tutor has a scheduling conflict on ${date.toISOString().split("T")[0]
+                } at ${session.startTime}-${session.endTime}`,
             });
-          }   
+          }
 
           const classSession = await createClassSession(
             savedClass._id,
@@ -286,9 +285,8 @@ const ClassController = {
           );
           const newSessionActivity = new Activity({
             name: "New Session",
-            description: `New session created for ${subject} on ${
-              date.toISOString().split("T")[0]
-            } at ${session.startTime}-${session.endTime}`,
+            description: `New session created for ${subject} on ${date.toISOString().split("T")[0]
+              } at ${session.startTime}-${session.endTime}`,
             class: savedClass._id,
             classSession: classSession._id,
           });
@@ -429,9 +427,8 @@ const ClassController = {
         if (!isAvailable) {
           return res.status(400).json({
             status: "failed",
-            message: `Tutor has a scheduling conflict on ${
-              date.toISOString().split("T")[0]
-            } at ${startTime}-${endTime}`,
+            message: `Tutor has a scheduling conflict on ${date.toISOString().split("T")[0]
+              } at ${startTime}-${endTime}`,
           });
         }
 
@@ -444,9 +441,8 @@ const ClassController = {
         );
         const newSessionActivity = new Activity({
           name: "New Session",
-          description: `New session created for ${exsistingClass.subject} on ${
-            date.toISOString().split("T")[0]
-          } at ${startTime}-${endTime}`,
+          description: `New session created for ${exsistingClass.subject} on ${date.toISOString().split("T")[0]
+            } at ${startTime}-${endTime}`,
           class: classId,
           classSession: classSession._id,
         });
@@ -464,193 +460,190 @@ const ClassController = {
     }
   },
   // Function to mark class as completed
-markClassAsCompleted : async (req, res) => {
-  try {
-    const { classId } = req.params;
-    
-    // Find the class
-    const classData = await Class.findById(classId);
-    
-    if (!classData) {
-      return res.status(404).json({
-        status: "failed",
-        message: "Class not found"
-      });
-    }
-    
-    // Check if class is already completed
-    if (classData.status === "completed") {
-      return res.status(400).json({
-        status: "failed",
-        message: "Class is already marked as completed"
-      });
-    }
-    
-    // Check if all sessions are completed
-    const sessions = await ClassSession.find({ class: classId });
-    const pendingSessions = sessions.filter(
-      session => session.status === "scheduled"
-    );
-    
-    if (pendingSessions.length > 0) {
-      return res.status(400).json({
-        status: "failed",
-        message: `There are still ${pendingSessions.length} pending sessions for this class`
-      });
-    }
-    
-    // Update class status to completed
-    classData.status = "completed";
-    await classData.save();
-    
-    // Create activity log
-    const newActivity = new Activity({
-      name: "Class Completed",
-      description: `Class ${classData.subject} has been marked as completed`,
-      class: classId
-    });
-    await newActivity.save();
-    
-    // Notify tutor
-    const tutorUser = await TutorProfile.findOne({ _id: classData.tutor });
-    if (tutorUser) {
-      const tutorActivity = new Activity({
-        name: "Class Completed",
-        description: `Your class ${classData.subject} has been marked as completed`,
-        class: classId,
-        tutorId: tutorUser.user
-      });
-      await tutorActivity.save();
-    }
-    
-    // Notify students
-    for (const student of classData.students) {
-      const studentActivity = new Activity({
-        name: "Class Completed",
-        description: `Your class ${classData.subject} has been marked as completed`,
-        class: classId,
-        studentId: student.id
-      });
-      await studentActivity.save();
-    }
-    
-    res.status(200).json({
-      status: "success",
-      message: "Class marked as completed successfully",
-      data: classData
-    });
-  } catch (error) {
-    console.error("markClassAsCompleted Error:", error);
-    res.status(500).json({
-      status: "failed",
-      message: "Error marking class as completed",
-      error: error.message
-    });
-  }
-},
+  markClassAsCompleted: async (req, res) => {
+    try {
+      const { classId } = req.params;
 
-// Add this to your ClassController object in class.Controller.js
+      // Find the class
+      const classData = await Class.findById(classId);
 
-markSessionAsCompleted: async (req, res) => {
-  try {
-    const { sessionId } = req.params;
-    const userId = req.user && req.user._id;
-    
-    // Find the session
-    const session = await ClassSession.findById(sessionId);
-    if (!session) {
-      return res.status(404).json({ 
-        status: "failed", 
-        message: "Session not found" 
+      if (!classData) {
+        return res.status(404).json({
+          status: "failed",
+          message: "Class not found"
+        });
+      }
+
+      // Check if class is already completed
+      if (classData.status === "completed") {
+        return res.status(400).json({
+          status: "failed",
+          message: "Class is already marked as completed"
+        });
+      }
+
+      // Check if all sessions are completed
+      const sessions = await ClassSession.find({ class: classId });
+      const pendingSessions = sessions.filter(
+        session => session.status === "scheduled"
+      );
+
+      if (pendingSessions.length > 0) {
+        return res.status(400).json({
+          status: "failed",
+          message: `There are still ${pendingSessions.length} pending sessions for this class`
+        });
+      }
+
+      // Update class status to completed
+      classData.status = "completed";
+      await classData.save();
+
+      // Create activity log
+      const newActivity = new Activity({
+        name: "Class Completed",
+        description: `Class ${classData.subject} has been marked as completed`,
+        class: classId
       });
-    }
-    
-    // Check if session is already completed
-    if (session.status === "completed") {
-      return res.status(400).json({
-        status: "failed",
-        message: "Session is already marked as completed"
-      });
-    }
-    
-    // Update session status to completed
-    session.status = "completed";
-    session.completedAt = new Date();
-    session.completedBy = userId || null;
-    await session.save();
-    
-    // Get the parent class for activity logs
-    const classData = await Class.findById(session.class);
-    
-    // Create activity log
-    const newActivity = new Activity({
-      name: "Session Completed",
-      description: `Session for ${classData ? classData.subject : 'class'} on ${
-        session.date.toISOString().split("T")[0]
-      } (${session.startTime}-${session.endTime}) has been marked as completed`,
-      class: session.class,
-      classSession: session._id,
-      user: userId
-    });
-    await newActivity.save();
-    
-    // Notify tutor if class data exists
-    if (classData) {
+      await newActivity.save();
+
+      // Notify tutor
       const tutorUser = await TutorProfile.findOne({ _id: classData.tutor });
       if (tutorUser) {
         const tutorActivity = new Activity({
-          name: "Session Completed",
-          description: `Your session for ${classData.subject} on ${
-            session.date.toISOString().split("T")[0]
-          } (${session.startTime}-${session.endTime}) has been marked as completed`,
-          class: session.class,
-          classSession: session._id,
+          name: "Class Completed",
+          description: `Your class ${classData.subject} has been marked as completed`,
+          class: classId,
           tutorId: tutorUser.user
         });
         await tutorActivity.save();
       }
-      
+
       // Notify students
       for (const student of classData.students) {
         const studentActivity = new Activity({
-          name: "Session Completed",
-          description: `Your session for ${classData.subject} on ${
-            session.date.toISOString().split("T")[0]
-          } (${session.startTime}-${session.endTime}) has been marked as completed`,
-          class: session.class,
-          classSession: session._id,
+          name: "Class Completed",
+          description: `Your class ${classData.subject} has been marked as completed`,
+          class: classId,
           studentId: student.id
         });
         await studentActivity.save();
       }
-    }
-    
-    // Check if all sessions for this class are now completed
-    // You could optionally auto-complete the class if all sessions are completed
 
-    const allClassSessions = await ClassSession.find({ class: session.class });
-    const pendingSessions = allClassSessions.filter(s => s.status !== "completed" && s.status !== "cancelled");
-    
-    if (pendingSessions.length === 0) {
-      // All sessions are completed or cancelled, you could auto-complete the class
-      await Class.findByIdAndUpdate(session.class, { status: "completed" });
+      res.status(200).json({
+        status: "success",
+        message: "Class marked as completed successfully",
+        data: classData
+      });
+    } catch (error) {
+      console.error("markClassAsCompleted Error:", error);
+      res.status(500).json({
+        status: "failed",
+        message: "Error marking class as completed",
+        error: error.message
+      });
     }
-  
-    
-    res.status(200).json({
-      status: "success",
-      message: "Session marked as completed successfully",
-      data: session
-    });
-  } catch (error) {
-    console.error("markSessionAsCompleted Error:", error);
-    res.status(500).json({
-      status: "failed",
-      message: "Error marking session as completed",
-      error: error.message
-    });
-  }
-},
+  },
+
+  // Add this to your ClassController object in class.Controller.js
+
+  markSessionAsCompleted: async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const userId = req.user && req.user._id;
+
+      // Find the session
+      const session = await ClassSession.findById(sessionId);
+      if (!session) {
+        return res.status(404).json({
+          status: "failed",
+          message: "Session not found"
+        });
+      }
+
+      // Check if session is already completed
+      if (session.status === "completed") {
+        return res.status(400).json({
+          status: "failed",
+          message: "Session is already marked as completed"
+        });
+      }
+
+      // Update session status to completed
+      session.status = "completed";
+      session.completedAt = new Date();
+      session.completedBy = userId || null;
+      await session.save();
+
+      // Get the parent class for activity logs
+      const classData = await Class.findById(session.class);
+
+      // Create activity log
+      const newActivity = new Activity({
+        name: "Session Completed",
+        description: `Session for ${classData ? classData.subject : 'class'} on ${session.date.toISOString().split("T")[0]
+          } (${session.startTime}-${session.endTime}) has been marked as completed`,
+        class: session.class,
+        classSession: session._id,
+        user: userId
+      });
+      await newActivity.save();
+
+      // Notify tutor if class data exists
+      if (classData) {
+        const tutorUser = await TutorProfile.findOne({ _id: classData.tutor });
+        if (tutorUser) {
+          const tutorActivity = new Activity({
+            name: "Session Completed",
+            description: `Your session for ${classData.subject} on ${session.date.toISOString().split("T")[0]
+              } (${session.startTime}-${session.endTime}) has been marked as completed`,
+            class: session.class,
+            classSession: session._id,
+            tutorId: tutorUser.user
+          });
+          await tutorActivity.save();
+        }
+
+        // Notify students
+        for (const student of classData.students) {
+          const studentActivity = new Activity({
+            name: "Session Completed",
+            description: `Your session for ${classData.subject} on ${session.date.toISOString().split("T")[0]
+              } (${session.startTime}-${session.endTime}) has been marked as completed`,
+            class: session.class,
+            classSession: session._id,
+            studentId: student.id
+          });
+          await studentActivity.save();
+        }
+      }
+
+      // Check if all sessions for this class are now completed
+      // You could optionally auto-complete the class if all sessions are completed
+
+      const allClassSessions = await ClassSession.find({ class: session.class });
+      const pendingSessions = allClassSessions.filter(s => s.status !== "completed" && s.status !== "cancelled");
+
+      if (pendingSessions.length === 0) {
+        // All sessions are completed or cancelled, you could auto-complete the class
+        await Class.findByIdAndUpdate(session.class, { status: "completed" });
+      }
+
+
+      res.status(200).json({
+        status: "success",
+        message: "Session marked as completed successfully",
+        data: session
+      });
+    } catch (error) {
+      console.error("markSessionAsCompleted Error:", error);
+      res.status(500).json({
+        status: "failed",
+        message: "Error marking session as completed",
+        error: error.message
+      });
+    }
+  },
   deleteSession: async (req, res) => {
     try {
       const { classId, sessionId } = req.body;
@@ -842,11 +835,9 @@ markSessionAsCompleted: async (req, res) => {
       await ClassSession.findByIdAndUpdate(sessionId, { room: roomId });
       const newActivity = new Activity({
         name: "Room Assigned",
-        description: `Room ${room.name} assigned to session for ${
-          class_name.subject
-        } on ${session.date.toISOString().split("T")[0]} at ${
-          session.startTime
-        }-${session.endTime}`,
+        description: `Room ${room.name} assigned to session for ${class_name.subject
+          } on ${session.date.toISOString().split("T")[0]} at ${session.startTime
+          }-${session.endTime}`,
         class: session.class,
         classSession: session._id,
       });
@@ -893,11 +884,9 @@ markSessionAsCompleted: async (req, res) => {
       });
       const newAcitivity = new Activity({
         name: "Room Unassigned",
-        description: `Room ${room.name} unassigned from session for ${
-          session.class
-        } on ${session.date.toISOString().split("T")[0]} at ${
-          session.startTime
-        }-${session.endTime}`,
+        description: `Room ${room.name} unassigned from session for ${session.class
+          } on ${session.date.toISOString().split("T")[0]} at ${session.startTime
+          }-${session.endTime}`,
         class: session.class,
         classSession: session._id,
       });
@@ -931,23 +920,23 @@ markSessionAsCompleted: async (req, res) => {
       }
 
       // mark cancelled
-      session.status             = "cancelled";
+      session.status = "cancelled";
       session.cancellationReason = reason || "";
-      session.cancelledBy        = userId || null;
-      session.cancelledAt        = new Date();
+      session.cancelledBy = userId || null;
+      session.cancelledAt = new Date();
       await session.save();
 
       // log activity
       await Activity.create({
-        name:    "Session Cancelled",
-        description: 
+        name: "Session Cancelled",
+        description:
           `Session for class ${session.class} on ` +
           `${session.date.toISOString().split("T")[0]} ` +
           `(${session.startTime}-${session.endTime}) cancelled` +
           (reason ? `: ${reason}` : ""),
-        class:        session.class,
+        class: session.class,
         classSession: session._id,
-        user:         userId
+        user: userId
       });
 
       return res.status(200).json({ status: "success", session });
@@ -963,28 +952,28 @@ markSessionAsCompleted: async (req, res) => {
     try {
       const { sessionId, newDate, newStartTime, newEndTime } = req.body;
       const userId = req.user && req.user._id;
-  
+
       // 1) Load the existing session
       const session = await ClassSession.findById(sessionId);
       if (!session) {
         return res.status(404).json({ status: "failed", message: "Session not found" });
       }
-  
+
       // 2) Load the parent class to know tutor & room
       const classDoc = await Class.findById(session.class);
       if (!classDoc) {
         return res.status(404).json({ status: "failed", message: "Parent class not found" });
       }
       const tutorId = classDoc.tutor;
-      const roomId  = session.room;
-  
+      const roomId = session.room;
+
       // 3) Remove the old room booking
       if (roomId) {
         await Room.findByIdAndUpdate(roomId, {
           $pull: { bookings: { classSession: session._id } }
         });
       }
-  
+
       // 4) Validate tutor & room availability on the new slot
       const okTutor = await checkTutorAvailability(tutorId, newDate, newStartTime, newEndTime);
       if (!okTutor) {
@@ -994,49 +983,49 @@ markSessionAsCompleted: async (req, res) => {
       if (!okRoom) {
         return res.status(400).json({ status: "failed", message: "Room unavailable at that time" });
       }
-  
+
       // 5) Record old values for activity log
-      const oldDate      = session.date;
+      const oldDate = session.date;
       const oldStartTime = session.startTime;
-      const oldEndTime   = session.endTime;
-  
+      const oldEndTime = session.endTime;
+
       // 6) Update the session in-place
-      session.date          = new Date(newDate);
-      session.startTime     = newStartTime;
-      session.endTime       = newEndTime;
-      session.status        = "rescheduled";
+      session.date = new Date(newDate);
+      session.startTime = newStartTime;
+      session.endTime = newEndTime;
+      session.status = "rescheduled";
       // point back to itself for clarity
       session.rescheduledFrom = session.rescheduledFrom || session._id;
-      session.rescheduledTo   = session._id;
+      session.rescheduledTo = session._id;
       await session.save();
-  
+
       // 7) Re-book the room under the new date/time
       if (roomId) {
         await Room.findByIdAndUpdate(roomId, {
           $push: {
             bookings: {
-              date:         session.date,
-              startTime:    newStartTime,
-              endTime:      newEndTime,
-              class:        session.class,
+              date: session.date,
+              startTime: newStartTime,
+              endTime: newEndTime,
+              class: session.class,
               classSession: session._id
             }
           }
         });
       }
-  
+
       // 8) Log activity
       await Activity.create({
-        name:    "Session Rescheduled",
+        name: "Session Rescheduled",
         description:
           `Session for class ${session.class} moved from ` +
           `${oldDate.toISOString().split("T")[0]} (${oldStartTime}-${oldEndTime}) ` +
           `to ${newDate} (${newStartTime}-${newEndTime})`,
-        class:        session.class,
+        class: session.class,
         classSession: session._id,
-        user:         userId
+        user: userId
       });
-  
+
       return res.status(200).json({ status: "success", session });
     } catch (err) {
       console.error("rescheduleSession Error:", err);
@@ -1045,18 +1034,33 @@ markSessionAsCompleted: async (req, res) => {
   },
 
 
-  
+
   getDashboardStats: async (req, res) => {
     try {
-      // Get the date range (last 7 days)
+      // Get the date range based on timeframe (default to last 7 days for "Week")
+      const timeframe = req.query.timeframe || "Week";
+      
       const endDate = new Date();
       const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 7);
-
+      
+      if (timeframe === "Week") {
+        startDate.setDate(startDate.getDate() - 7);
+      } else if (timeframe === "Month") {
+        startDate.setMonth(startDate.getMonth() - 1);
+      } else if (timeframe === "Year") {
+        startDate.setFullYear(startDate.getFullYear() - 1);
+      }
+  
       // Get basic stats
       const totalClasses = await Class.countDocuments();
       const activeClasses = await Class.countDocuments({ status: "active" });
-
+  
+      // Get new students (those who joined in the selected timeframe)
+      const newStudents = await User.countDocuments({
+        role: "student",
+        createdAt: { $gte: startDate, $lte: endDate }
+      });
+  
       // Get all students from active classes
       const classes = await Class.find({ status: "active" });
       const uniqueStudents = new Set();
@@ -1065,82 +1069,295 @@ markSessionAsCompleted: async (req, res) => {
           uniqueStudents.add(student.id.toString());
         });
       });
-
+  
       // Get payments for revenue calculation
       const payments = await Payment.find({
         createdAt: { $gte: startDate, $lte: endDate },
         type: "Payment",
         status: "completed",
       });
-
-      // Calculate daily revenue for the past week
+  
+      // Calculate daily revenue
       const dailyRevenue = {};
-      const lastWeekRevenue = {};
-
-      // Initialize days
-      for (let i = 0; i < 7; i++) {
+      const lastPeriodRevenue = {};
+  
+      // Initialize days for current period
+      const daysToInitialize = timeframe === "Week" ? 7 : timeframe === "Month" ? 30 : 12;
+      for (let i = 0; i < daysToInitialize; i++) {
         const date = new Date();
-        date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().split("T")[0];
-        dailyRevenue[dateStr] = 0;
+        
+        if (timeframe === "Week") {
+          date.setDate(date.getDate() - i);
+          const dateStr = date.toISOString().split("T")[0];
+          dailyRevenue[dateStr] = 0;
+        } else if (timeframe === "Month") {
+          date.setDate(date.getDate() - i);
+          const dateStr = date.toISOString().split("T")[0];
+          dailyRevenue[dateStr] = 0;
+        } else if (timeframe === "Year") {
+          date.setMonth(date.getMonth() - i);
+          const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+          dailyRevenue[dateStr] = 0;
+        }
       }
-
-      // Calculate revenue for current week
+  
+      // Calculate revenue for current period (all student payments)
       payments.forEach((payment) => {
-        const dateStr = payment.createdAt.toISOString().split("T")[0];
+        const date = new Date(payment.createdAt);
+        let dateStr;
+        
+        if (timeframe === "Week" || timeframe === "Month") {
+          dateStr = date.toISOString().split("T")[0];
+        } else { // Year
+          dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+        }
+        
         if (dailyRevenue[dateStr] !== undefined) {
           dailyRevenue[dateStr] += payment.amount;
         }
       });
-
-      // Get previous week's payments for comparison
-      const prevWeekStart = new Date(startDate);
-      prevWeekStart.setDate(prevWeekStart.getDate() - 7);
-
-      const prevWeekPayments = await Payment.find({
-        createdAt: { $gte: prevWeekStart, $lt: startDate },
+  
+      // Get previous period's payments for comparison
+      const prevPeriodStart = new Date(startDate);
+      const prevPeriodEnd = new Date(startDate);
+      
+      if (timeframe === "Week") {
+        prevPeriodStart.setDate(prevPeriodStart.getDate() - 7);
+      } else if (timeframe === "Month") {
+        prevPeriodStart.setMonth(prevPeriodStart.getMonth() - 1);
+      } else if (timeframe === "Year") {
+        prevPeriodStart.setFullYear(prevPeriodStart.getFullYear() - 1);
+      }
+  
+      const prevPeriodPayments = await Payment.find({
+        createdAt: { $gte: prevPeriodStart, $lt: startDate },
         type: "Payment",
         status: "completed",
       });
-
-      // Calculate previous week's revenue
-      prevWeekPayments.forEach((payment) => {
+  
+      // Calculate previous period's revenue for comparison
+      prevPeriodPayments.forEach((payment) => {
         const date = new Date(payment.createdAt);
-        date.setDate(date.getDate() + 7); // Shift to current week for comparison
-        const dateStr = date.toISOString().split("T")[0];
-        lastWeekRevenue[dateStr] =
-          (lastWeekRevenue[dateStr] || 0) + payment.amount;
+        let adjustedDate = new Date(date);
+        
+        if (timeframe === "Week") {
+          adjustedDate.setDate(adjustedDate.getDate() + 7); // Shift to current week for comparison
+          const dateStr = adjustedDate.toISOString().split("T")[0];
+          lastPeriodRevenue[dateStr] = (lastPeriodRevenue[dateStr] || 0) + payment.amount;
+        } else if (timeframe === "Month") {
+          adjustedDate.setMonth(adjustedDate.getMonth() + 1); // Shift to current month
+          const dateStr = adjustedDate.toISOString().split("T")[0];
+          lastPeriodRevenue[dateStr] = (lastPeriodRevenue[dateStr] || 0) + payment.amount;
+        } else if (timeframe === "Year") {
+          adjustedDate.setFullYear(adjustedDate.getFullYear() + 1); // Shift to current year
+          const dateStr = `${adjustedDate.getFullYear()}-${(adjustedDate.getMonth() + 1).toString().padStart(2, '0')}`;
+          lastPeriodRevenue[dateStr] = (lastPeriodRevenue[dateStr] || 0) + payment.amount;
+        }
       });
-
-      // Get active students data
-      const sessions = await ClassSession.find({
-        date: { $gte: startDate, $lte: endDate },
+  
+      // Get all expenses (teacher payouts + class costs)
+      
+      // 1. Get tutor payouts for the current period
+      const tutorPayouts = await Payment.find({
+        createdAt: { $gte: startDate, $lte: endDate },
+        type: "Payout",
+        status: "completed",
       });
-
-      const dailyActiveStudents = {};
-      const daysOfWeek = [
-        "Sunday",
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-      ];
-
-      sessions.forEach((session) => {
-        const dayName = daysOfWeek[session.date.getDay()];
-        const presentStudents =
-          session.attendance?.filter((a) => a.status === "present").length || 0;
-        dailyActiveStudents[dayName] =
-          (dailyActiveStudents[dayName] || 0) + presentStudents;
+  
+      // Calculate total tutor payouts
+      const totalTutorPayouts = tutorPayouts.reduce(
+        (total, payment) => total + payment.amount,
+        0
+      );
+  
+      // 2. Get class costs for classes with sessions in the current period
+      // First, get all class sessions in the date range
+      const classSessions = await ClassSession.find({
+        date: { $gte: startDate, $lte: endDate }
       });
-
+      
+      // Get all unique class IDs from these sessions
+      const classIds = [...new Set(classSessions.map(session => 
+        session.class ? session.class.toString() : null).filter(id => id !== null))];
+      
+      // Fetch the actual class documents with their costs
+      const classesWithCosts = await Class.find({
+        _id: { $in: classIds }
+      });
+      
+      // Debug to see what classes are found and their costs
+      console.log("Classes with costs:", classesWithCosts.map(c => ({ 
+        id: c._id, 
+        classCost: c.classCost || 0 
+      })));
+      
+      // Calculate total class costs (once per class, not per session)
+      // We count each class cost only once in the period
+      const totalClassCosts = classesWithCosts.reduce((total, cls) => {
+        return total + (cls.classCost || 0);
+      }, 0);
+      
+      console.log("Total Class Cost:", totalClassCosts);
+  
+      // Track daily expenses (tutor payouts + class costs)
+      const dailyExpenses = { ...dailyRevenue }; // Start with same structure as revenue
+      Object.keys(dailyExpenses).forEach(key => { dailyExpenses[key] = 0; }); // Reset all values to 0
+  
+      // Track daily expenses by type for detailed breakdown
+      const dailyTutorPayouts = { ...dailyExpenses };
+      const dailyClassCosts = { ...dailyExpenses };
+  
+      // Add tutor payouts to expenses
+      tutorPayouts.forEach(payment => {
+        const date = new Date(payment.createdAt);
+        let dateStr;
+        
+        if (timeframe === "Week" || timeframe === "Month") {
+          dateStr = date.toISOString().split("T")[0];
+        } else { // Year
+          dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+        }
+        
+        if (dailyExpenses[dateStr] !== undefined) {
+          dailyExpenses[dateStr] += payment.amount;
+          dailyTutorPayouts[dateStr] += payment.amount;
+        }
+      });
+  
+      // Create a map to associate class costs with dates of their sessions
+      // This distributes class costs across the days they have sessions
+      const classSessionDates = {};
+      
+      classSessions.forEach(session => {
+        const classId = session.class ? session.class.toString() : null;
+        if (!classId) return;
+        
+        const dateObj = new Date(session.date);
+        let dateStr;
+        
+        if (timeframe === "Week" || timeframe === "Month") {
+          dateStr = dateObj.toISOString().split("T")[0];
+        } else { // Year
+          dateStr = `${dateObj.getFullYear()}-${(dateObj.getMonth() + 1).toString().padStart(2, '0')}`;
+        }
+        
+        if (!classSessionDates[classId]) {
+          classSessionDates[classId] = [];
+        }
+        
+        if (!classSessionDates[classId].includes(dateStr)) {
+          classSessionDates[classId].push(dateStr);
+        }
+      });
+      
+      // Distribute class costs across days with sessions
+      classesWithCosts.forEach(cls => {
+        const classId = cls._id.toString();
+        const classCost = cls.classCost || 0;
+        
+        // Get session dates for this class
+        const sessionDates = classSessionDates[classId] || [];
+        
+        if (sessionDates.length > 0) {
+          // If there are session dates, distribute the cost
+          const costPerSession = classCost / sessionDates.length;
+          
+          sessionDates.forEach(dateStr => {
+            if (dailyExpenses[dateStr] !== undefined) {
+              dailyExpenses[dateStr] += costPerSession;
+              dailyClassCosts[dateStr] += costPerSession;
+            }
+          });
+        }
+      });
+  
+      // Calculate gross profit (revenue - expenses) for each day
+      const dailyGrossProfit = {};
+      Object.keys(dailyRevenue).forEach(dateStr => {
+        dailyGrossProfit[dateStr] = dailyRevenue[dateStr] - dailyExpenses[dateStr];
+      });
+  
+      // Calculate total revenue for the current period
+      const totalRevenue = Object.values(dailyRevenue).reduce((sum, value) => sum + value, 0);
+      
+      // Calculate total revenue for the previous period
+      const totalPrevRevenue = Object.values(lastPeriodRevenue).reduce((sum, value) => sum + value, 0);
+      
+      // Calculate total expenses for the current period
+      const totalExpenses = totalTutorPayouts + totalClassCosts;
+      
+      // Calculate total gross profit
+      const totalGrossProfit = totalRevenue - totalExpenses;
+  
+      // Calculate percentage changes
+      const revenueChange = totalPrevRevenue
+        ? (((totalRevenue - totalPrevRevenue) / totalPrevRevenue) * 100).toFixed(2)
+        : 0;
+  
+      // Calculate today's revenue and gross profit
+      const todayStr = new Date().toISOString().split("T")[0];
+      const todayRevenue = dailyRevenue[todayStr] || 0;
+      const todayGrossProfit = dailyGrossProfit[todayStr] || 0;
+  
+      // Format data for weekly charts
+      let formattedRevenueData = [];
+      let formattedProfitData = [];
+      
+      if (timeframe === "Week" || timeframe === "Month") {
+        // For Week and Month, show daily data points
+        formattedRevenueData = Object.entries(dailyRevenue)
+          .map(([day, revenue]) => ({
+            day: new Date(day).toLocaleDateString("en-US", { weekday: "short" }),
+            revenue,
+            expenses: dailyExpenses[day] || 0,
+            tutorPayout: dailyTutorPayouts[day] || 0,
+            classCost: dailyClassCosts[day] || 0,
+            comparison: lastPeriodRevenue[day] || 0,
+          }))
+          .reverse();
+        
+        formattedProfitData = Object.entries(dailyGrossProfit)
+          .map(([day, profit]) => ({
+            day: new Date(day).toLocaleDateString("en-US", { weekday: "short" }),
+            profit,
+            revenue: dailyRevenue[day] || 0,
+            expenses: dailyExpenses[day] || 0,
+          }))
+          .reverse();
+      } else {
+        // For Year, show monthly data points
+        formattedRevenueData = Object.entries(dailyRevenue)
+          .map(([month, revenue]) => {
+            const [year, monthNum] = month.split('-');
+            return {
+              day: new Date(parseInt(year), parseInt(monthNum) - 1, 1).toLocaleDateString("en-US", { month: "short" }),
+              revenue,
+              expenses: dailyExpenses[month] || 0,
+              tutorPayout: dailyTutorPayouts[month] || 0,
+              classCost: dailyClassCosts[month] || 0,
+              comparison: lastPeriodRevenue[month] || 0,
+            };
+          })
+          .reverse();
+        
+        formattedProfitData = Object.entries(dailyGrossProfit)
+          .map(([month, profit]) => {
+            const [year, monthNum] = month.split('-');
+            return {
+              day: new Date(parseInt(year), parseInt(monthNum) - 1, 1).toLocaleDateString("en-US", { month: "short" }),
+              profit,
+              revenue: dailyRevenue[month] || 0,
+              expenses: dailyExpenses[month] || 0,
+            };
+          })
+          .reverse();
+      }
+  
       // Get active tutors for the sidebar
       const activeTutors = await TutorProfile.find()
         .populate("user", "firstName lastName")
         .limit(7);
-
+  
       const formattedTutors = activeTutors.map((tutor) => ({
         id: tutor._id,
         name: `${tutor.user.firstName} ${tutor.user.lastName}`,
@@ -1148,13 +1365,13 @@ markSessionAsCompleted: async (req, res) => {
           ? `${tutor.shifts[0].startTime} - ${tutor.shifts[0].endTime}`
           : "No shift",
       }));
-
+  
       // Get recent payments
       const recentPayments = await Payment.find()
         .sort({ createdAt: -1 })
         .limit(5)
         .populate("user", "firstName lastName");
-
+  
       const formattedPayments = recentPayments.map((payment) => ({
         amount: payment.amount,
         date: payment.createdAt.toLocaleDateString("en-US", {
@@ -1165,47 +1382,26 @@ markSessionAsCompleted: async (req, res) => {
         description: payment.reason || "Class Payment",
         status: payment.status,
       }));
-
-      // Calculate percentage changes
-      const currentWeekTotal = Object.values(dailyRevenue).reduce(
-        (a, b) => a + b,
-        0
-      );
-      const lastWeekTotal = Object.values(lastWeekRevenue).reduce(
-        (a, b) => a + b,
-        0
-      );
-      const revenueChange = lastWeekTotal
-        ? (((currentWeekTotal - lastWeekTotal) / lastWeekTotal) * 100).toFixed(
-            2
-          )
-        : 0;
-
+  
+      // Return the formatted response
       res.json({
         status: "success",
         data: {
           stats: {
-            newStudents: uniqueStudents.size,
+            newStudents: newStudents,
+            totalStudents: uniqueStudents.size,
             activeClasses,
-            todayRevenue:
-              dailyRevenue[new Date().toISOString().split("T")[0]] || 0,
+            todayRevenue,
             revenueChange: parseFloat(revenueChange),
+            totalRevenue,
+            totalExpenses,
+            grossProfit: totalGrossProfit,
+            todayGrossProfit,
+            tutorPayouts: totalTutorPayouts,
+            classCosts: totalClassCosts
           },
-          weeklyRevenue: Object.entries(dailyRevenue)
-            .map(([day, revenue]) => ({
-              day: new Date(day).toLocaleDateString("en-US", {
-                weekday: "short",
-              }),
-              revenue,
-              comparison: lastWeekRevenue[day] || 0,
-            }))
-            .reverse(),
-          activeStudents: Object.entries(dailyActiveStudents).map(
-            ([day, students]) => ({
-              day,
-              students,
-            })
-          ),
+          weeklyRevenue: formattedRevenueData,
+          weeklyGrossProfit: formattedProfitData,
           activeTutors: formattedTutors,
           payments: formattedPayments,
         },
@@ -1272,9 +1468,9 @@ const getClassSessions = async (req, res) => {
       status: session.status,
       room: session.room
         ? {
-            _id: session.room._id,
-            name: session.room.name,
-          }
+          _id: session.room._id,
+          name: session.room.name,
+        }
         : null,
       attendance: session.attendance.map((record) => ({
         student: {
