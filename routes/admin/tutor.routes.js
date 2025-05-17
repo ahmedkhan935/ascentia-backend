@@ -36,4 +36,5 @@ router.get(
   );
 router.put('/payment/:id',[authenticateJWT,isAdmin], tutorController.updatePaymentStatus);
 
+
 module.exports = router;

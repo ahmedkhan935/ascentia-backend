@@ -50,12 +50,12 @@ const tutorController = {
       // Convert to numbers if possible and validate
       if (latitude) {
         latitude = Number(latitude);
-        if (isNaN(latitude)) latitude = null; // Set to null if not a valid number
+        if (isNaN(latitude)) latitude = null; 
       }
       
       if (longitude) {
         longitude = Number(longitude);
-        if (isNaN(longitude)) longitude = null; // Set to null if not a valid number
+        if (isNaN(longitude)) longitude = null;
       }
   
       // Validate required fields

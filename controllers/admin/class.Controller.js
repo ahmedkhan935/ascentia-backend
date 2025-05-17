@@ -463,6 +463,194 @@ const ClassController = {
       });
     }
   },
+  // Function to mark class as completed
+markClassAsCompleted : async (req, res) => {
+  try {
+    const { classId } = req.params;
+    
+    // Find the class
+    const classData = await Class.findById(classId);
+    
+    if (!classData) {
+      return res.status(404).json({
+        status: "failed",
+        message: "Class not found"
+      });
+    }
+    
+    // Check if class is already completed
+    if (classData.status === "completed") {
+      return res.status(400).json({
+        status: "failed",
+        message: "Class is already marked as completed"
+      });
+    }
+    
+    // Check if all sessions are completed
+    const sessions = await ClassSession.find({ class: classId });
+    const pendingSessions = sessions.filter(
+      session => session.status === "scheduled"
+    );
+    
+    if (pendingSessions.length > 0) {
+      return res.status(400).json({
+        status: "failed",
+        message: `There are still ${pendingSessions.length} pending sessions for this class`
+      });
+    }
+    
+    // Update class status to completed
+    classData.status = "completed";
+    await classData.save();
+    
+    // Create activity log
+    const newActivity = new Activity({
+      name: "Class Completed",
+      description: `Class ${classData.subject} has been marked as completed`,
+      class: classId
+    });
+    await newActivity.save();
+    
+    // Notify tutor
+    const tutorUser = await TutorProfile.findOne({ _id: classData.tutor });
+    if (tutorUser) {
+      const tutorActivity = new Activity({
+        name: "Class Completed",
+        description: `Your class ${classData.subject} has been marked as completed`,
+        class: classId,
+        tutorId: tutorUser.user
+      });
+      await tutorActivity.save();
+    }
+    
+    // Notify students
+    for (const student of classData.students) {
+      const studentActivity = new Activity({
+        name: "Class Completed",
+        description: `Your class ${classData.subject} has been marked as completed`,
+        class: classId,
+        studentId: student.id
+      });
+      await studentActivity.save();
+    }
+    
+    res.status(200).json({
+      status: "success",
+      message: "Class marked as completed successfully",
+      data: classData
+    });
+  } catch (error) {
+    console.error("markClassAsCompleted Error:", error);
+    res.status(500).json({
+      status: "failed",
+      message: "Error marking class as completed",
+      error: error.message
+    });
+  }
+},
+
+// Add this to your ClassController object in class.Controller.js
+
+markSessionAsCompleted: async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = req.user && req.user._id;
+    
+    // Find the session
+    const session = await ClassSession.findById(sessionId);
+    if (!session) {
+      return res.status(404).json({ 
+        status: "failed", 
+        message: "Session not found" 
+      });
+    }
+    
+    // Check if session is already completed
+    if (session.status === "completed") {
+      return res.status(400).json({
+        status: "failed",
+        message: "Session is already marked as completed"
+      });
+    }
+    
+    // Update session status to completed
+    session.status = "completed";
+    session.completedAt = new Date();
+    session.completedBy = userId || null;
+    await session.save();
+    
+    // Get the parent class for activity logs
+    const classData = await Class.findById(session.class);
+    
+    // Create activity log
+    const newActivity = new Activity({
+      name: "Session Completed",
+      description: `Session for ${classData ? classData.subject : 'class'} on ${
+        session.date.toISOString().split("T")[0]
+      } (${session.startTime}-${session.endTime}) has been marked as completed`,
+      class: session.class,
+      classSession: session._id,
+      user: userId
+    });
+    await newActivity.save();
+    
+    // Notify tutor if class data exists
+    if (classData) {
+      const tutorUser = await TutorProfile.findOne({ _id: classData.tutor });
+      if (tutorUser) {
+        const tutorActivity = new Activity({
+          name: "Session Completed",
+          description: `Your session for ${classData.subject} on ${
+            session.date.toISOString().split("T")[0]
+          } (${session.startTime}-${session.endTime}) has been marked as completed`,
+          class: session.class,
+          classSession: session._id,
+          tutorId: tutorUser.user
+        });
+        await tutorActivity.save();
+      }
+      
+      // Notify students
+      for (const student of classData.students) {
+        const studentActivity = new Activity({
+          name: "Session Completed",
+          description: `Your session for ${classData.subject} on ${
+            session.date.toISOString().split("T")[0]
+          } (${session.startTime}-${session.endTime}) has been marked as completed`,
+          class: session.class,
+          classSession: session._id,
+          studentId: student.id
+        });
+        await studentActivity.save();
+      }
+    }
+    
+    // Check if all sessions for this class are now completed
+    // You could optionally auto-complete the class if all sessions are completed
+
+    const allClassSessions = await ClassSession.find({ class: session.class });
+    const pendingSessions = allClassSessions.filter(s => s.status !== "completed" && s.status !== "cancelled");
+    
+    if (pendingSessions.length === 0) {
+      // All sessions are completed or cancelled, you could auto-complete the class
+      await Class.findByIdAndUpdate(session.class, { status: "completed" });
+    }
+  
+    
+    res.status(200).json({
+      status: "success",
+      message: "Session marked as completed successfully",
+      data: session
+    });
+  } catch (error) {
+    console.error("markSessionAsCompleted Error:", error);
+    res.status(500).json({
+      status: "failed",
+      message: "Error marking session as completed",
+      error: error.message
+    });
+  }
+},
   deleteSession: async (req, res) => {
     try {
       const { classId, sessionId } = req.body;

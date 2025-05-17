@@ -51,4 +51,10 @@ router.post(
   [authenticateJWT,isAdmin],
   ClassController.rescheduleSession
 );
+router.patch("/:classId/complete",[authenticateJWT,isAdmin], ClassController.markClassAsCompleted);
+router.patch(
+  "/sessions/:sessionId/complete",
+  [authenticateJWT, isAdmin],
+  ClassController.markSessionAsCompleted
+);
 module.exports = router;
