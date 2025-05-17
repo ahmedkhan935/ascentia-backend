@@ -9,6 +9,10 @@ const classSessionSchema = new mongoose.Schema({
     enum: ["scheduled", "completed", "cancelled", "rescheduled"],
     default: "scheduled",
   },
+  sessionCost: { 
+    type: Number,
+    default: 0
+  },
   attendance: [
     {
       student: { type: mongoose.Schema.Types.ObjectId, ref: "User" },

@@ -43,21 +43,47 @@ async function checkRoomAvailability(roomId, date, startTime, endTime) {
   return !conflictingBooking;
 }
 
-// Helper function to generate dates between start and end date for a specific day of week
-function generateSessionDates(startDate, endDate, dayOfWeek) {
+// Helper function to generate dates between start and end date for a specific day of week and recurrence pattern
+function generateSessionDates(startDate, endDate, session) {
   const dates = [];
   let currentDate = new Date(startDate);
-
-  // Ensure we're working with date objects
   const endDateTime = new Date(endDate);
-
+  
+  // Handle one-off sessions with a specific date
+  if (session.recurrence === 'one-off' && session.specificDate) {
+    const specificDate = new Date(session.specificDate);
+    // Check if the specific date falls within the class date range
+    if (specificDate >= currentDate && specificDate <= endDateTime) {
+      dates.push(specificDate);
+    }
+    return dates;
+  }
+  
+  // For trial sessions, just add one session on the first matching day
+  if (session.isTrial) {
+    while (currentDate <= endDateTime) {
+      if (currentDate.getDay() === parseInt(session.dayOfWeek)) {
+        dates.push(new Date(currentDate));
+        break; // Just add one date for trial classes
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    return dates;
+  }
+  
+  // For weekly and fortnightly sessions
   while (currentDate <= endDateTime) {
-    if (currentDate.getDay() === parseInt(dayOfWeek)) {
+    if (currentDate.getDay() === parseInt(session.dayOfWeek)) {
       dates.push(new Date(currentDate));
+      
+      // For fortnightly, skip an extra week
+      if (session.recurrence === 'fortnightly') {
+        currentDate.setDate(currentDate.getDate() + 7); // Skip an extra week
+      }
     }
     currentDate.setDate(currentDate.getDate() + 1);
   }
-
+  
   return dates;
 }
 
@@ -120,8 +146,8 @@ const checkTutorAvailability = async (tutorId, date, startTime, endTime) => {
 
   return true;
 };
-// Helper function to create a class session
-async function createClassSession(classId, date, startTime, endTime, roomId) {
+
+async function createClassSession(classId, date, startTime, endTime, roomId, sessionCost = 0) {
   // Check room availability
   const isRoomAvailable = await checkRoomAvailability(
     roomId,
@@ -138,6 +164,7 @@ async function createClassSession(classId, date, startTime, endTime, roomId) {
     endTime: endTime,
     room: isRoomAvailable ? roomId : null,
     status: "scheduled",
+    sessionCost: sessionCost // Add the session cost
   });
 
   const savedSession = await session.save();
@@ -171,7 +198,7 @@ const ClassController = {
         sessions,
         room,
         tutorPayout,
-        classCost,
+        sessionCosts, // Replace classCost with sessionCosts array
         startDate,
         endDate,
       } = req.body;
@@ -182,9 +209,9 @@ const ClassController = {
           message: "Start date cannot be greater than end date",
         });
       }
-
+  
       // Get tutor's shifts
-      const tutorProfile = await Tutor.findOne({ _id: tutor });
+      const tutorProfile = await TutorProfile.findOne({ _id: tutor });
       if (!tutorProfile) {
         return res.status(400).json({
           status: "failed",
@@ -197,21 +224,24 @@ const ClassController = {
           message: "Tutor has no shifts set",
         });
       }
-
-      // Validate each session against tutor's shifts
+  
+      // Validate each session against tutor's shifts and assign recurrence pattern from shift
+      const enrichedSessions = [];
       for (const session of sessions) {
+        // Find matching shifts for this day
         const dayShifts = tutorProfile.shifts.filter(
           (shift) => shift.dayOfWeek == session.dayOfWeek
         );
-
+  
         if (dayShifts.length === 0) {
           return res.status(400).json({
             status: "failed",
             message: `Tutor is not available on day ${session.dayOfWeek}`,
           });
         }
-
-        const isTimeValid = dayShifts.some(
+  
+        // Filter shifts by time availability
+        const availableShifts = dayShifts.filter(
           (shift) =>
             isTimeWithinShift(
               session.startTime,
@@ -220,41 +250,52 @@ const ClassController = {
             ) &&
             isTimeWithinShift(session.endTime, shift.startTime, shift.endTime)
         );
-
-        if (!isTimeValid) {
+  
+        if (availableShifts.length === 0) {
           return res.status(400).json({
             status: "failed",
             message: `Session time ${session.startTime}-${session.endTime} is outside tutor's availability`,
           });
         }
+  
+        // Use the first matching shift's properties
+        const matchedShift = availableShifts[0];
+        enrichedSessions.push({
+          ...session,
+          recurrence: session.recurrence || matchedShift.recurrence || 'weekly',
+          isTrial: session.isTrial !== undefined ? session.isTrial : matchedShift.isTrial || false,
+          specificDate: session.specificDate || 
+            (matchedShift.recurrence === 'one-off' ? matchedShift.specificDate : undefined)
+        });
       }
-
-      // Create the class
+  
+      // Create the class with enriched sessions
       const newClass = new Class({
         subject,
         price,
         tutor,
         students,
-        sessions,
+        sessions: enrichedSessions,
         allocatedRoom: room,
         tutorPayout,
-        classCost,
+        sessionCosts, // Use sessionCosts instead of classCost
         startDate,
         endDate,
         type,
       });
-
+  
       const savedClass = await newClass.save();
-
+  
       // Generate and validate sessions for each scheduled day
       const generatedSessions = [];
-      for (const session of sessions) {
+      for (const session of enrichedSessions) {
+        // Generate session dates based on recurrence pattern
         const sessionDates = generateSessionDates(
           startDate,
           endDate,
-          session.dayOfWeek
+          session
         );
-
+  
         // Check availability for each date
         for (const date of sessionDates) {
           const isAvailable = await checkTutorAvailability(
@@ -263,25 +304,29 @@ const ClassController = {
             session.startTime,
             session.endTime
           );
-
+  
           if (!isAvailable) {
             // If conflict found, delete the class and any created sessions
             await Class.findByIdAndDelete(savedClass._id);
             await ClassSession.deleteMany({ class: savedClass._id });
-
+  
             return res.status(400).json({
               status: "failed",
               message: `Tutor has a scheduling conflict on ${date.toISOString().split("T")[0]
                 } at ${session.startTime}-${session.endTime}`,
             });
           }
-
+  
+          // Find the cost for this specific day of the week
+          const sessionCost = sessionCosts.find(sc => sc.dayOfWeek == session.dayOfWeek)?.cost || 0;
+  
           const classSession = await createClassSession(
             savedClass._id,
             date,
             session.startTime,
             session.endTime,
-            room
+            room,
+            sessionCost // Pass the session-specific cost
           );
           const newSessionActivity = new Activity({
             name: "New Session",
@@ -294,9 +339,10 @@ const ClassController = {
           generatedSessions.push(classSession);
         }
       }
-
+  
+      // The rest of the function remains the same...
       const tutorUser = await TutorProfile.findOne({ _id: tutor });
-
+  
       const tutorPayment = new Payment({
         user: tutorUser.user,
         amount: tutorPayout,
@@ -312,7 +358,7 @@ const ClassController = {
         description: `New class created for ${subject}`,
         class: savedClass._id,
       });
-
+  
       const newActivity3 = new Activity({
         name: "New Payout",
         description: `New payout created for ${subject}`,
@@ -343,9 +389,9 @@ const ClassController = {
         });
         await newActivity2.save();
       }
-
+  
       await newActivity.save();
-
+  
       res.status(201).json({
         status: "success",
         data: {
@@ -360,20 +406,22 @@ const ClassController = {
   },
   addSession: async (req, res) => {
     try {
-      const { classId, dayOfWeek, startTime, endTime } = req.body;
-      const exsistingClass = await Class.findById(classId);
-      if (!exsistingClass) {
+      const { classId, dayOfWeek, startTime, endTime, sessionCost = 0, recurrence = 'weekly', isTrial = false, specificDate } = req.body;
+      const existingClass = await Class.findById(classId);
+      if (!existingClass) {
         return res
           .status(404)
           .json({ message: "Class not found", status: "failed" });
       }
-      const tutorProfile = await Tutor.findOne({ _id: exsistingClass.tutor });
+      const tutorProfile = await TutorProfile.findOne({ _id: existingClass.tutor });
       if (!tutorProfile) {
         return res.status(400).json({
           status: "failed",
           message: "Tutor profile not found",
         });
       }
+      
+      // Match with tutor shifts
       const dayShifts = tutorProfile.shifts.filter(
         (shift) => shift.dayOfWeek == dayOfWeek
       );
@@ -383,74 +431,108 @@ const ClassController = {
           message: `Tutor is not available on day ${dayOfWeek}`,
         });
       }
-      const isTimeValid = dayShifts.some(
-        (shift) =>
-          isTimeWithinShift(startTime, shift.startTime, shift.endTime) &&
-          isTimeWithinShift(endTime, shift.startTime, shift.endTime)
+      
+      // Find shifts with matching recurrence pattern
+      const matchingShifts = dayShifts.filter(shift => 
+        isTimeWithinShift(startTime, shift.startTime, shift.endTime) &&
+        isTimeWithinShift(endTime, shift.startTime, shift.endTime) &&
+        (recurrence === shift.recurrence || !recurrence)
       );
-
-      if (!isTimeValid) {
+  
+      if (matchingShifts.length === 0) {
         return res.status(400).json({
           status: "failed",
-          message: `Session time ${startTime}-${endTime} is outside tutor's availability`,
+          message: `No matching shift found for session time ${startTime}-${endTime} with recurrence ${recurrence}`,
         });
       }
-
-      //now check tutor conflicts
-
-      exsistingClass.sessions.push({
+  
+      // Add the new session to the class
+      const newSession = {
         dayOfWeek,
         startTime,
         endTime,
-      });
-      await exsistingClass.save();
-
-      //now create sessions for each date
+        recurrence,
+        isTrial,
+        specificDate
+      };
+      
+      existingClass.sessions.push(newSession);
+      
+      // Add session cost if provided
+      if (sessionCost > 0) {
+        const sessionCostExists = existingClass.sessionCosts.some(
+          sc => sc.dayOfWeek == dayOfWeek
+        );
+        
+        if (sessionCostExists) {
+          // Update existing cost for this day
+          existingClass.sessionCosts = existingClass.sessionCosts.map(sc =>
+            sc.dayOfWeek == dayOfWeek ? { ...sc, cost: sessionCost } : sc
+          );
+        } else {
+          // Add new cost entry for this day
+          existingClass.sessionCosts.push({
+            dayOfWeek,
+            cost: sessionCost
+          });
+        }
+      }
+      
+      await existingClass.save();
+  
+      // Create class sessions based on the new session recurrence pattern
       const generatedSessions = [];
       const startOfDay = new Date(new Date().toISOString().slice(0, 10));
-
+  
       const sessionDates = generateSessionDates(
-        //current dates,
         startOfDay,
-        exsistingClass.endDate,
-        dayOfWeek
+        existingClass.endDate,
+        newSession
       );
-      //check availability for each date
-
+  
+      // Check availability for each date
       for (const date of sessionDates) {
         const isAvailable = await checkTutorAvailability(
-          exsistingClass.tutor,
+          existingClass.tutor,
           date,
           startTime,
           endTime
         );
+        
         if (!isAvailable) {
           return res.status(400).json({
             status: "failed",
-            message: `Tutor has a scheduling conflict on ${date.toISOString().split("T")[0]
-              } at ${startTime}-${endTime}`,
+            message: `Tutor has a scheduling conflict on ${date.toISOString().split("T")[0]} at ${startTime}-${endTime}`,
           });
         }
-
+  
         const classSession = await createClassSession(
           classId,
           date,
           startTime,
           endTime,
-          exsistingClass.allocatedRoom
+          existingClass.allocatedRoom,
+          sessionCost // Pass the session cost
         );
+        
         const newSessionActivity = new Activity({
           name: "New Session",
-          description: `New session created for ${exsistingClass.subject} on ${date.toISOString().split("T")[0]
-            } at ${startTime}-${endTime}`,
+          description: `New session created for ${existingClass.subject} on ${date.toISOString().split("T")[0]} at ${startTime}-${endTime}`,
           class: classId,
           classSession: classSession._id,
         });
+        
         await newSessionActivity.save();
         generatedSessions.push(classSession);
       }
-
-      res.status(201).json({ generatedSessions, status: "success" });
+  
+      res.status(201).json({ 
+        status: "success", 
+        data: {
+          generatedSessions,
+          updatedClass: existingClass
+        }
+      });
     } catch (error) {
       res.status(500).json({
         message: "Error creating session",
@@ -947,18 +1029,17 @@ const ClassController = {
   },
 
 
-  // RESCHEDULE a session: create a new one, link both docs
   rescheduleSession: async (req, res) => {
     try {
-      const { sessionId, newDate, newStartTime, newEndTime } = req.body;
+      const { sessionId, newDate, newStartTime, newEndTime, newSessionCost } = req.body;
       const userId = req.user && req.user._id;
-
+  
       // 1) Load the existing session
       const session = await ClassSession.findById(sessionId);
       if (!session) {
         return res.status(404).json({ status: "failed", message: "Session not found" });
       }
-
+  
       // 2) Load the parent class to know tutor & room
       const classDoc = await Class.findById(session.class);
       if (!classDoc) {
@@ -966,14 +1047,14 @@ const ClassController = {
       }
       const tutorId = classDoc.tutor;
       const roomId = session.room;
-
+  
       // 3) Remove the old room booking
       if (roomId) {
         await Room.findByIdAndUpdate(roomId, {
           $pull: { bookings: { classSession: session._id } }
         });
       }
-
+  
       // 4) Validate tutor & room availability on the new slot
       const okTutor = await checkTutorAvailability(tutorId, newDate, newStartTime, newEndTime);
       if (!okTutor) {
@@ -983,22 +1064,27 @@ const ClassController = {
       if (!okRoom) {
         return res.status(400).json({ status: "failed", message: "Room unavailable at that time" });
       }
-
+  
       // 5) Record old values for activity log
       const oldDate = session.date;
       const oldStartTime = session.startTime;
       const oldEndTime = session.endTime;
-
+      const oldSessionCost = session.sessionCost;
+  
       // 6) Update the session in-place
       session.date = new Date(newDate);
       session.startTime = newStartTime;
       session.endTime = newEndTime;
       session.status = "rescheduled";
+      // Update session cost if provided
+      if (newSessionCost !== undefined) {
+        session.sessionCost = newSessionCost;
+      }
       // point back to itself for clarity
       session.rescheduledFrom = session.rescheduledFrom || session._id;
       session.rescheduledTo = session._id;
       await session.save();
-
+  
       // 7) Re-book the room under the new date/time
       if (roomId) {
         await Room.findByIdAndUpdate(roomId, {
@@ -1013,19 +1099,23 @@ const ClassController = {
           }
         });
       }
-
+  
       // 8) Log activity
+      const costChangeInfo = newSessionCost !== undefined && newSessionCost !== oldSessionCost
+        ? ` and cost updated from ${oldSessionCost} to ${newSessionCost}`
+        : '';
+        
       await Activity.create({
         name: "Session Rescheduled",
         description:
           `Session for class ${session.class} moved from ` +
           `${oldDate.toISOString().split("T")[0]} (${oldStartTime}-${oldEndTime}) ` +
-          `to ${newDate} (${newStartTime}-${newEndTime})`,
+          `to ${newDate} (${newStartTime}-${newEndTime})${costChangeInfo}`,
         class: session.class,
         classSession: session._id,
         user: userId
       });
-
+  
       return res.status(200).json({ status: "success", session });
     } catch (err) {
       console.error("rescheduleSession Error:", err);
