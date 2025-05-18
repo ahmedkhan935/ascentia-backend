@@ -10,6 +10,10 @@ const RoomSchema = new mongoose.Schema({
         type:String,
         required:true
     },
+    capacity:{
+        type:Number,
+        required:true
+    },
     bookings:[{
         date:{
             type:Date,

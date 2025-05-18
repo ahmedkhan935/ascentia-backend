@@ -1,16 +1,14 @@
 const Room= require('../../models/Room');
-const Class= require('../../models/Class');
-const User= require('../../models/User');
-const ClassSession = require('../../models/ClassSession');
 
 const Activity = require("../../models/Activity");
 const RoomController = {
     AddRoom: async (req, res) => {
         try {
-            const { name, description } = req.body;
+            const { name, description,capacity } = req.body;
             const newRoom = new Room({
                 name,
-                description
+                description,
+                capacity,
             });
             const newActivity = new Activity({
 
@@ -60,8 +58,8 @@ const RoomController = {
     UpdateRoom: async (req, res) => {
         try {
             const { id } = req.params;
-            const { name, description } = req.body;
-            const room = await Room.findByIdAndUpdate(id, { name, description }, { new: true });
+            const { name, description,capacity } = req.body;
+            const room = await Room.findByIdAndUpdate(id, { name, description,capacity }, { new: true });
             if (!room) {
                 return res.status(404).json({ message: 'Room not found' });
             }

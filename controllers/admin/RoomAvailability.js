@@ -143,6 +143,7 @@ const RoomAvailabilityController = {
                 id: room._id,
                 name: room.name,
                 description: room.description,
+                capacity:room.capacity,
                 totalBookings: room.bookings ? room.bookings.length : 0
             }));
             
