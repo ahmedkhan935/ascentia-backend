@@ -1037,135 +1037,119 @@ const tutorController = {
     }
   },
   
-updateTutor: async (req, res) => {
-  console.log("Update Tutor Request Body:", req.body);
-
-  try {
-    // 1) Treat req.params.id as the TutorProfile _id
-    const profileId = req.params.id;
-    console.log("Profile ID:", profileId);
-
-    const profile = await TutorProfile.findById(profileId);
-    if (!profile) {
-      return res.status(404).json({ message: 'Tutor profile not found' });
-    }
-
-    // 2) Now load the User by profile.user
-    const user = await User.findById(profile.user);
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    console.log("Current user data:", {
-      email:     user.email,
-      firstName: user.firstName,
-      lastName:  user.lastName,
-      phone:     user.phone
-    });
-
-  if (req.body.email) {
-  const newEmail = req.body.email.trim().toLowerCase();
-  if (newEmail !== user.email) {
-    const existing = await User.findOne({ email: newEmail });
-    if (existing && existing._id.toString() !== user._id.toString()) {
-      return res.status(400).json({ message: 'Email already in use by another user' });
-    }
-    user.email = newEmail;
-    console.log("Updated email to:", newEmail);
-  }
-}
-
-
-    if (req.body.password) {
-      const raw = req.body.password;
-      console.log("Updating password…");
-      const salt = await bcrypt.genSalt(10);
-      user.password = await bcrypt.hash(raw, salt);
-    }
-
-    if (req.body.firstName) {
-      user.firstName = req.body.firstName;
-      console.log("Updated firstName to:", user.firstName);
-    }
-
-    if (req.body.lastName) {
-      user.lastName = req.body.lastName;
-      console.log("Updated lastName to:", user.lastName);
-    }
-
-    if (req.body.phone) {
-      user.phone = req.body.phone;
-      console.log("Updated phone to:", user.phone);
-    }
-
-    await user.save();
-    console.log("Saved updated user");
-
-    // 4) Update TutorProfile fields
-    if (req.body.subjects) {
-      profile.subjects = Array.isArray(req.body.subjects)
-        ? req.body.subjects
-        : JSON.parse(req.body.subjects);
-      console.log("Updated subjects to:", profile.subjects);
-    }
-
-    if (req.body.category) {
-      profile.category = req.body.category;
-      console.log("Updated category to:", profile.category);
-    }
-
-    // ensure qualifications array exists
-    if (!Array.isArray(profile.qualifications) || profile.qualifications.length === 0) {
-      profile.qualifications = [{ degree: "", institution: "" }];
-    }
-
-    if (req.body.degree) {
-      profile.qualifications[0].degree = req.body.degree;
-      console.log("Updated degree to:", profile.qualifications[0].degree);
-    }
-
-    if (req.body.university) {
-      profile.qualifications[0].institution = req.body.university;
-      console.log("Updated university to:", profile.qualifications[0].institution);
-    }
-
-    await profile.save();
-    console.log("Saved updated profile");
-
-    // 5) Log activity against the profileId
-    const activity = new Activity({
-      name:             'Tutor Updated',
-      description:      `Tutor ${user.firstName} ${user.lastName} updated`,
-      tutorProfileId:   profileId,
-    });
-    await activity.save();
-    await createLog('UPDATE', 'TUTOR', profileId, req.user, req);
-
-    // 6) Fetch fresh data for response
-    const freshUser    = await User.findById(user._id);
-    const freshProfile = await TutorProfile.findById(profileId);
-
-    // 7) Respond with updated data
-    res.status(200).json({
-      message: 'Tutor updated successfully',
-      tutor: {
-        profileId,
-        user: {
-          _id:       freshUser._id,
-          email:     freshUser.email,
-          firstName: freshUser.firstName,
-          lastName:  freshUser.lastName,
-          phone:     freshUser.phone,
+  updateTutor: async (req, res) => {  
+    try {
+      // 1) Treat req.params.id as the TutorProfile _id
+      const profileId = req.params.id;
+  
+      const profile = await TutorProfile.findById(profileId);
+      if (!profile) {
+        return res.status(404).json({ message: 'Tutor profile not found' });
+      }
+  
+      // 2) Now load the User by profile.user
+      const user = await User.findById(profile.user);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+  
+      // Update email if provided
+      if (req.body.email) {
+        const newEmail = req.body.email.trim().toLowerCase();
+        if (newEmail !== user.email) {
+          const existing = await User.findOne({ email: newEmail });
+          if (existing && existing._id.toString() !== user._id.toString()) {
+            return res.status(400).json({ message: 'Email already in use by another user' });
+          }
+          user.email = newEmail;
+        }
+      }
+  
+      // Update first name if provided
+      if (req.body.firstName) {
+        user.firstName = req.body.firstName;
+      }
+  
+      // Update last name if provided
+      if (req.body.lastName) {
+        user.lastName = req.body.lastName;
+      }
+  
+      // Update phone if provided
+      if (req.body.phone) {
+        user.phone = req.body.phone;
+      }
+  
+      // Save the updated user
+      await user.save();
+      console.log("Saved updated user");
+  
+      // 3) Update TutorProfile fields
+      
+      // Update subjects if provided
+      if (req.body.subjects) {
+        profile.subjects = Array.isArray(req.body.subjects)
+          ? req.body.subjects
+          : JSON.parse(req.body.subjects);
+      }
+  
+      // Ensure qualifications array exists
+      if (!Array.isArray(profile.qualifications) || profile.qualifications.length === 0) {
+        profile.qualifications = [{ degree: "", institution: "" }];
+      }
+  
+      // Update degree if provided
+      if (req.body.degree) {
+        profile.qualifications[0].degree = req.body.degree;
+      }
+  
+      // Update university/institution if provided
+      if (req.body.university) {
+        profile.qualifications[0].institution = req.body.university;
+      }
+  
+      // Update address if provided
+      if (req.body.address) {
+        profile.address = req.body.address;
+      }
+  
+      // Save the updated profile
+      await profile.save();
+      console.log("Saved updated profile");
+  
+      // 4) Log activity
+      const activity = new Activity({
+        name:             'Tutor Updated',
+        description:      `Tutor ${user.firstName} ${user.lastName} updated`,
+        tutorProfileId:   profileId,
+      });
+      await activity.save();
+      await createLog('UPDATE', 'TUTOR', profileId, req.user, req);
+  
+      const freshUser    = await User.findById(user._id);
+      const freshProfile = await TutorProfile.findById(profileId);
+  
+      // 6) Respond with updated data
+      res.status(200).json({
+        message: 'Tutor updated successfully',
+        tutor: {
+          profileId,
+          user: {
+            _id:       freshUser._id,
+            email:     freshUser.email,
+            firstName: freshUser.firstName,
+            lastName:  freshUser.lastName,
+            phone:     freshUser.phone,
+          },
+          profile: freshProfile
         },
-        profile: freshProfile
-      },
-    });
-    console.log("Response sent");
-  } catch (error) {
-    console.error('Error in Tutor.update:', error);
-    res.status(500).json({ message: 'Error updating tutor', error: error.message });
-  }
-},
+      });
+      console.log("Response sent");
+    } catch (error) {
+      console.error('Error in Tutor.update:', error);
+      res.status(500).json({ message: 'Error updating tutor', error: error.message });
+    }
+  },
 
 getTutorSessionsforconflicts: async (req, res) => {
   try {
