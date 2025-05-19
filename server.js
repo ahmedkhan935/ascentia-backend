@@ -12,7 +12,7 @@ const MODE = process.env.MODE || "local";
 
 // Middleware
 app.use(cors());
-// app.use(express.json());
+app.use(express.json()); // Uncommented this line as it seems to be commented out
 app.use("/api", router);
 app.use("/api2", router2);
 app.get("/", (req, res) => {
@@ -22,26 +22,13 @@ app.get("/", (req, res) => {
 // Store server instance
 let server;
 
-// Connect to database and start server
-const startServer = async () => {
+// Initialize cron jobs
+const startCronJobs = () => {
   try {
-    await connectDB(MODE);
-    server = app.listen(port, () => {
-      console.log(`Server is running on port ${port}`);
-    });
-
-    // Handle server shutdown
-    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-    process.on("uncaughtException", (error) => {
-      console.log("Uncaught Exception:", error);
-      console.error("Uncaught Exception:", error);
-      gracefulShutdown("uncaughtException");
-    });
-    process.on("SIGUSR2", () => gracefulShutdown("SIGUSR2"));
+    require('./CroneJob/cronJob');
+    console.log('Cron jobs initialized successfully');
   } catch (error) {
-    console.error("Failed to start server:", error);
-    process.exit(1);
+    console.error('Failed to initialize cron jobs:', error);
   }
 };
 
@@ -64,6 +51,32 @@ const gracefulShutdown = async (signal) => {
     }, 10000);
   } else {
     process.exit(0);
+  }
+};
+
+// Connect to database and start server
+const startServer = async () => {
+  try {
+    await connectDB(MODE);
+    server = app.listen(port, () => {
+      console.log(`Server is running on port ${port}`);
+      
+      // Start cron jobs after server is successfully started
+      startCronJobs();
+    });
+
+    // Handle server shutdown
+    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+    process.on("uncaughtException", (error) => {
+      console.log("Uncaught Exception:", error);
+      console.error("Uncaught Exception:", error);
+      gracefulShutdown("uncaughtException");
+    });
+    process.on("SIGUSR2", () => gracefulShutdown("SIGUSR2"));
+  } catch (error) {
+    console.error("Failed to start server:", error);
+    process.exit(1);
   }
 };
 
