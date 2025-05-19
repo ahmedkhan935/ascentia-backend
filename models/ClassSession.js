@@ -6,7 +6,7 @@ const classSessionSchema = new mongoose.Schema({
   endTime: { type: String, required: true },
   status: {
     type: String,
-    enum: ["scheduled", "completed", "cancelled", "rescheduled"],
+    enum: ["scheduled", "completed", "cancelled", "rescheduled","pending"],
     default: "scheduled",
   },
   sessionCost: { 

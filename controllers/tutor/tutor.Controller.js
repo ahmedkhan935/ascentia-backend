@@ -427,10 +427,10 @@ const tutorController = {
           status: "Error",
         });
       }
-      session.status = "completed"; //mark session as completed
+      session.status = "pending"; //mark session as completed
       await session.save();
       const newActivity = new Activity({
-        name: "Session Completed",
+        name: "Session Completed. Waiting for admin approval",
         description: `Session ${session.class.subject} for ${session.date} ${session.startTime} - ${session.endTime} marked as completed`,
         tutorId: req.user._id,
       });
