@@ -147,30 +147,106 @@ const checkTutorAvailability = async (tutorId, date, startTime, endTime) => {
   return true;
 };
 
-async function createClassSession(classId, date, startTime, endTime, roomId, sessionCost = 0) {
-  // Check room availability
-  const isRoomAvailable = await checkRoomAvailability(
-    roomId,
-    date,
-    startTime,
-    endTime
-  );
+// Helper function to create payments for a session
+async function createSessionPayments(classId, sessionId, session, students, tutorId, subject) {
+  const allPayments = [];
+  const sessionDate = new Date(session.date || session.sessionDate);
 
-  // Create the session
-  const session = new ClassSession({
+  // Create teacher payout payment
+  const tutorUser = await TutorProfile.findOne({ _id: tutorId });
+  if (tutorUser && session.teacherPayout > 0) {
+    const teacherPayment = new Payment({
+      user: tutorUser.user,
+      amount: session.teacherPayout,
+      classId: classId,
+      classSessionId: sessionId,
+      status: "pending",
+      type: "Payout",
+      paymentMethod: "stripe",
+      reason: `Teacher payout for ${subject} session on ${sessionDate.toISOString().split("T")[0]}`,
+      sessionDate: sessionDate,
+      sessionTime: {
+        startTime: session.startTime,
+        endTime: session.endTime
+      }
+    });
+    await teacherPayment.save();
+    allPayments.push(teacherPayment);
+  }
+
+  // Create student payments
+  for (const student of students) {
+    if (student.pricePerSession > 0) {
+      const studentPayment = new Payment({
+        user: student.id,
+        amount: student.pricePerSession,
+        classId: classId,
+        classSessionId: sessionId,
+        status: "pending",
+        type: "Payment",
+        paymentMethod: "stripe",
+        reason: `Student payment for ${subject} session on ${sessionDate.toISOString().split("T")[0]}`,
+        sessionDate: sessionDate,
+        sessionTime: {
+          startTime: session.startTime,
+          endTime: session.endTime
+        }
+      });
+      await studentPayment.save();
+      allPayments.push(studentPayment);
+    }
+  }
+
+  return allPayments;
+}
+
+async function createClassSession(
+  classId, 
+  date, 
+  startTime, 
+  endTime, 
+  roomId, 
+  organizingCost = 0, 
+  teacherPayout = 0, 
+  totalStudentRevenue = 0, 
+  sessionType = "our-space"
+) {
+  // Prepare session data WITHOUT room initially
+  const sessionData = {
     class: classId,
     date: date,
     startTime: startTime,
     endTime: endTime,
-    room: isRoomAvailable ? roomId : null,
     status: "scheduled",
-    sessionCost: sessionCost // Add the session cost
-  });
+    organizingCost: organizingCost,
+    teacherPayout: teacherPayout,
+    totalStudentRevenue: totalStudentRevenue,
+    sessionType: sessionType
+  };
 
+  // Only add room field if sessionType is our-space AND roomId is provided
+  if (sessionType === 'our-space' && roomId) {
+    const isRoomAvailable = await checkRoomAvailability(
+      roomId,
+      date,
+      startTime,
+      endTime
+    );
+
+    if (isRoomAvailable) {
+      sessionData.room = roomId; // Only set room if available
+    } else {
+      // You can either throw an error or proceed without room
+      console.warn(`Room ${roomId} not available, creating session without room assignment`);
+    }
+  }
+
+  // Create and save the session
+  const session = new ClassSession(sessionData);
   const savedSession = await session.save();
 
-  // If room is available and specified, update room bookings
-  if (isRoomAvailable && roomId) {
+  // Update room bookings only if room was assigned
+  if (sessionData.room) {
     await Room.findByIdAndUpdate(roomId, {
       $push: {
         bookings: {
@@ -187,29 +263,31 @@ async function createClassSession(classId, date, startTime, endTime, roomId, ses
   return savedSession;
 }
 
+// Updated createClass function
 const ClassController = {
   async createClass(req, res) {
     try {
       const {
         subject,
-        price,
         tutor,
         students,
         sessions,
         room,
-        tutorPayout,
-        sessionCosts, // Replace classCost with sessionCosts array
         startDate,
         endDate,
+        sessionType = "our-space"
       } = req.body;
+
       const type = students.length > 1 ? "group" : "individual";
+      
       if (startDate > endDate) {
         return res.status(400).json({
           status: "failed",
           message: "Start date cannot be greater than end date",
         });
       }
-  
+
+      console.log("Tutor ID",tutor)
       // Get tutor's shifts
       const tutorProfile = await TutorProfile.findOne({ _id: tutor });
       if (!tutorProfile) {
@@ -224,23 +302,21 @@ const ClassController = {
           message: "Tutor has no shifts set",
         });
       }
-  
-      // Validate each session against tutor's shifts and assign recurrence pattern from shift
+
       const enrichedSessions = [];
       for (const session of sessions) {
         // Find matching shifts for this day
         const dayShifts = tutorProfile.shifts.filter(
           (shift) => shift.dayOfWeek == session.dayOfWeek
         );
-  
+
         if (dayShifts.length === 0) {
           return res.status(400).json({
             status: "failed",
             message: `Tutor is not available on day ${session.dayOfWeek}`,
           });
         }
-  
-        // Filter shifts by time availability
+
         const availableShifts = dayShifts.filter(
           (shift) =>
             isTimeWithinShift(
@@ -250,53 +326,57 @@ const ClassController = {
             ) &&
             isTimeWithinShift(session.endTime, shift.startTime, shift.endTime)
         );
-  
+
         if (availableShifts.length === 0) {
           return res.status(400).json({
             status: "failed",
             message: `Session time ${session.startTime}-${session.endTime} is outside tutor's availability`,
           });
         }
-  
-        // Use the first matching shift's properties
+
         const matchedShift = availableShifts[0];
         enrichedSessions.push({
           ...session,
           recurrence: session.recurrence || matchedShift.recurrence || 'weekly',
           isTrial: session.isTrial !== undefined ? session.isTrial : matchedShift.isTrial || false,
+          organizingCost: session.organizingCost || 0,
+          teacherPayout: session.teacherPayout || 0,
           specificDate: session.specificDate || 
             (matchedShift.recurrence === 'one-off' ? matchedShift.specificDate : undefined)
         });
       }
-  
-      // Create the class with enriched sessions
+
+      // Format students to match new schema structure
+      const formattedStudents = students.map(student => ({
+        id: student.id,
+        pricePerSession: student.cost || student.pricePerSession || 0,
+        paymentStatus: "pending"
+      }));
+
       const newClass = new Class({
         subject,
-        price,
         tutor,
-        students,
+        students: formattedStudents,
         sessions: enrichedSessions,
-        allocatedRoom: room,
-        tutorPayout,
-        sessionCosts, // Use sessionCosts instead of classCost
+        allocatedRoom: sessionType === 'our-space' ? room : undefined,
         startDate,
         endDate,
         type,
+        sessionType
       });
-  
+
       const savedClass = await newClass.save();
-  
-      // Generate and validate sessions for each scheduled day
+
       const generatedSessions = [];
+      const allPayments = [];
+
       for (const session of enrichedSessions) {
-        // Generate session dates based on recurrence pattern
         const sessionDates = generateSessionDates(
           startDate,
           endDate,
           session
         );
-  
-        // Check availability for each date
+
         for (const date of sessionDates) {
           const isAvailable = await checkTutorAvailability(
             tutor,
@@ -304,34 +384,52 @@ const ClassController = {
             session.startTime,
             session.endTime
           );
-  
+
           if (!isAvailable) {
-            // If conflict found, delete the class and any created sessions
             await Class.findByIdAndDelete(savedClass._id);
             await ClassSession.deleteMany({ class: savedClass._id });
-  
+
             return res.status(400).json({
               status: "failed",
-              message: `Tutor has a scheduling conflict on ${date.toISOString().split("T")[0]
-                } at ${session.startTime}-${session.endTime}`,
+              message: `Tutor has a scheduling conflict on ${date.toISOString().split("T")[0]} at ${session.startTime}-${session.endTime}`,
             });
           }
-  
-          // Find the cost for this specific day of the week
-          const sessionCost = sessionCosts.find(sc => sc.dayOfWeek == session.dayOfWeek)?.cost || 0;
-  
+
+          // Calculate total student revenue for this session
+          const totalStudentRevenue = formattedStudents.reduce((sum, student) => 
+            sum + (student.pricePerSession || 0), 0
+          );
+
           const classSession = await createClassSession(
             savedClass._id,
             date,
             session.startTime,
             session.endTime,
-            room,
-            sessionCost // Pass the session-specific cost
+            sessionType === 'our-space' ? room : null, // Pass null instead of undefined
+            session.organizingCost || 0,
+            session.teacherPayout || 0,
+            totalStudentRevenue,
+            sessionType
           );
+
+          // Create payments for this session
+          const sessionPayments = await createSessionPayments(
+            savedClass._id,
+            classSession._id,
+            {
+              ...session,
+              date: date,
+              sessionDate: date
+            },
+            formattedStudents,
+            tutor,
+            subject
+          );
+          allPayments.push(...sessionPayments);
+
           const newSessionActivity = new Activity({
             name: "New Session",
-            description: `New session created for ${subject} on ${date.toISOString().split("T")[0]
-              } at ${session.startTime}-${session.endTime}`,
+            description: `New session created for ${subject} on ${date.toISOString().split("T")[0]} at ${session.startTime}-${session.endTime}`,
             class: savedClass._id,
             classSession: classSession._id,
           });
@@ -339,41 +437,33 @@ const ClassController = {
           generatedSessions.push(classSession);
         }
       }
-  
-      // The rest of the function remains the same...
+
       const tutorUser = await TutorProfile.findOne({ _id: tutor });
-  
-      const tutorPayment = new Payment({
-        user: tutorUser.user,
-        amount: tutorPayout,
-        class: savedClass._id,
-        status: "pending",
-        type: "Payout",
-        paymentMethod: "stripe",
-        reason: "Tutor payout for class",
-      });
-      await tutorPayment.save();
+
       const newActivity = new Activity({
         name: "New Class",
         description: `New class created for ${subject}`,
         class: savedClass._id,
       });
-  
+
       const newActivity3 = new Activity({
-        name: "New Payout",
-        description: `New payout created for ${subject}`,
+        name: "New Payout Schedule",
+        description: `Payout schedule created for ${subject}`,
         class: savedClass._id,
         tutorId: tutorUser.user,
       });
+      
       const newActivity4 = new Activity({
         name: "New Class Assignment",
         description: `New class assigned to you`,
         class: savedClass._id,
         tutorId: tutorUser.user,
       });
+      
       await newActivity3.save();
       await newActivity4.save();
-      for (const student of students) {
+      
+      for (const student of formattedStudents) {
         const newActivity5 = new Activity({
           name: "New Class Assignment",
           description: `New class assigned to you`,
@@ -381,38 +471,54 @@ const ClassController = {
           studentId: student.id,
         });
         await newActivity5.save();
+        
         const newActivity2 = new Activity({
-          name: "New Payment",
-          description: `New pending payment created for ${subject}`,
+          name: "Payment Schedule Created",
+          description: `Payment schedule created for ${subject}`,
           class: savedClass._id,
           studentId: student.id,
         });
         await newActivity2.save();
       }
-  
+
       await newActivity.save();
-  
+
+      // Return response in the same structure as before
       res.status(201).json({
         status: "success",
         data: {
           class: savedClass,
           sessions: generatedSessions,
-          payments: [tutorPayment],
+          payments: allPayments, // Now includes all session-level payments
         },
       });
     } catch (error) {
       res.status(400).json({ message: error.message, status: "failed" });
     }
   },
+
+  // Updated addSession function with payment creation
   addSession: async (req, res) => {
     try {
-      const { classId, dayOfWeek, startTime, endTime, sessionCost = 0, recurrence = 'weekly', isTrial = false, specificDate } = req.body;
+      const { 
+        classId, 
+        dayOfWeek, 
+        startTime, 
+        endTime, 
+        organizingCost = 0, 
+        teacherPayout = 0,
+        recurrence = 'weekly', 
+        isTrial = false, 
+        specificDate 
+      } = req.body;
+      
       const existingClass = await Class.findById(classId);
       if (!existingClass) {
         return res
           .status(404)
           .json({ message: "Class not found", status: "failed" });
       }
+      
       const tutorProfile = await TutorProfile.findOne({ _id: existingClass.tutor });
       if (!tutorProfile) {
         return res.status(400).json({
@@ -438,14 +544,14 @@ const ClassController = {
         isTimeWithinShift(endTime, shift.startTime, shift.endTime) &&
         (recurrence === shift.recurrence || !recurrence)
       );
-  
+
       if (matchingShifts.length === 0) {
         return res.status(400).json({
           status: "failed",
           message: `No matching shift found for session time ${startTime}-${endTime} with recurrence ${recurrence}`,
         });
       }
-  
+
       // Add the new session to the class
       const newSession = {
         dayOfWeek,
@@ -453,44 +559,31 @@ const ClassController = {
         endTime,
         recurrence,
         isTrial,
+        organizingCost,
+        teacherPayout,
         specificDate
       };
       
       existingClass.sessions.push(newSession);
-      
-      // Add session cost if provided
-      if (sessionCost > 0) {
-        const sessionCostExists = existingClass.sessionCosts.some(
-          sc => sc.dayOfWeek == dayOfWeek
-        );
-        
-        if (sessionCostExists) {
-          // Update existing cost for this day
-          existingClass.sessionCosts = existingClass.sessionCosts.map(sc =>
-            sc.dayOfWeek == dayOfWeek ? { ...sc, cost: sessionCost } : sc
-          );
-        } else {
-          // Add new cost entry for this day
-          existingClass.sessionCosts.push({
-            dayOfWeek,
-            cost: sessionCost
-          });
-        }
-      }
-      
       await existingClass.save();
-  
+
       // Create class sessions based on the new session recurrence pattern
       const generatedSessions = [];
+      const allPayments = [];
       const startOfDay = new Date(new Date().toISOString().slice(0, 10));
-  
+
       const sessionDates = generateSessionDates(
         startOfDay,
         existingClass.endDate,
         newSession
       );
-  
-      // Check availability for each date
+
+      // Calculate total student revenue
+      const totalStudentRevenue = existingClass.students.reduce((sum, student) => 
+        sum + (student.pricePerSession || 0), 0
+      );
+
+      // Check availability for each date and create sessions
       for (const date of sessionDates) {
         const isAvailable = await checkTutorAvailability(
           existingClass.tutor,
@@ -505,15 +598,33 @@ const ClassController = {
             message: `Tutor has a scheduling conflict on ${date.toISOString().split("T")[0]} at ${startTime}-${endTime}`,
           });
         }
-  
+
         const classSession = await createClassSession(
           classId,
           date,
           startTime,
           endTime,
-          existingClass.allocatedRoom,
-          sessionCost // Pass the session cost
+          existingClass.sessionType === 'our-space' ? existingClass.allocatedRoom : undefined,
+          organizingCost,
+          teacherPayout,
+          totalStudentRevenue,
+          existingClass.sessionType
         );
+        
+        // Create payments for this new session
+        const sessionPayments = await createSessionPayments(
+          classId,
+          classSession._id,
+          {
+            ...newSession,
+            date: date,
+            sessionDate: date
+          },
+          existingClass.students,
+          existingClass.tutor,
+          existingClass.subject
+        );
+        allPayments.push(...sessionPayments);
         
         const newSessionActivity = new Activity({
           name: "New Session",
@@ -525,12 +636,13 @@ const ClassController = {
         await newSessionActivity.save();
         generatedSessions.push(classSession);
       }
-  
+
       res.status(201).json({ 
         status: "success", 
         data: {
           generatedSessions,
-          updatedClass: existingClass
+          updatedClass: existingClass,
+          payments: allPayments
         }
       });
     } catch (error) {
@@ -541,7 +653,294 @@ const ClassController = {
       });
     }
   },
-  // Function to mark class as completed
+
+  // Updated assignRoomToSession function
+  assignRoomToSession: async (req, res) => {
+    try {
+      const { roomId, sessionId } = req.body;
+      const session = await ClassSession.findById(sessionId);
+      if (!session) {
+        return res
+          .status(404)
+          .json({ message: "Session not found", status: "failed" });
+      }
+
+      // Check if the session type allows room assignment
+      if (session.sessionType !== 'our-space') {
+        return res.status(400).json({
+          message: "Room assignment is only allowed for 'our-space' sessions",
+          status: "failed",
+        });
+      }
+
+      //check if already assigned a room if yes then remove the booking from that room
+      if (session.room) {
+        const room = await Room.findById(session.room);
+        const bookingIndex = room.bookings.findIndex(
+          (booking) => booking.classSession.toString() === sessionId
+        );
+        await Room.findByIdAndUpdate(session.room, {
+          $pull: {
+            bookings: room.bookings[bookingIndex],
+          },
+        });
+      }
+      
+      const room = await Room.findById(roomId);
+      if (!room) {
+        return res
+          .status(404)
+          .json({ message: "Room not found", status: "failed" });
+      }
+      
+      const isRoomAvailable = await checkRoomAvailability(
+        roomId,
+        session.date,
+        session.startTime,
+        session.endTime
+      );
+      if (!isRoomAvailable) {
+        return res.status(400).json({
+          message: "Room not available for this time slot",
+          status: "failed",
+        });
+      }
+      
+      await Room.findByIdAndUpdate(roomId, {
+        $push: {
+          bookings: {
+            date: session.date,
+            startTime: session.startTime,
+            endTime: session.endTime,
+            class: session.class,
+            classSession: session._id,
+          },
+        },
+      });
+      
+      const class_name = await Class.findById(session.class);
+      await ClassSession.findByIdAndUpdate(sessionId, { room: roomId });
+      
+      const newActivity = new Activity({
+        name: "Room Assigned",
+        description: `Room ${room.name} assigned to session for ${class_name.subject} on ${session.date.toISOString().split("T")[0]} at ${session.startTime}-${session.endTime}`,
+        class: session.class,
+        classSession: session._id,
+      });
+      await newActivity.save();
+      
+      res
+        .status(200)
+        .json({ message: "Room assigned to session", status: "success" });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error assigning room to session",
+        error: error.message,
+        status: "Error",
+      });
+    }
+  },
+
+  // Updated rescheduleSession function with payment updates
+  rescheduleSession: async (req, res) => {
+    try {
+      const { sessionId, newDate, newStartTime, newEndTime, newOrganizingCost, newTeacherPayout } = req.body;
+      const userId = req.user && req.user._id;
+
+      // 1) Load the existing session
+      const session = await ClassSession.findById(sessionId);
+      if (!session) {
+        return res.status(404).json({ status: "failed", message: "Session not found" });
+      }
+
+      // 2) Load the parent class to know tutor & room
+      const classDoc = await Class.findById(session.class);
+      if (!classDoc) {
+        return res.status(404).json({ status: "failed", message: "Parent class not found" });
+      }
+      const tutorId = classDoc.tutor;
+      const roomId = session.room;
+
+      // 3) Remove the old room booking (only for our-space sessions)
+      if (roomId && session.sessionType === 'our-space') {
+        await Room.findByIdAndUpdate(roomId, {
+          $pull: { bookings: { classSession: session._id } }
+        });
+      }
+
+      // 4) Validate tutor & room availability on the new slot
+      const okTutor = await checkTutorAvailability(tutorId, newDate, newStartTime, newEndTime);
+      if (!okTutor) {
+        return res.status(400).json({ status: "failed", message: "Tutor unavailable at that time" });
+      }
+      
+      // Only check room availability for our-space sessions
+      if (session.sessionType === 'our-space' && roomId) {
+        const okRoom = await checkRoomAvailability(roomId, newDate, newStartTime, newEndTime);
+        if (!okRoom) {
+          return res.status(400).json({ status: "failed", message: "Room unavailable at that time" });
+        }
+      }
+
+      // 5) Record old values for activity log
+      const oldDate = session.date;
+      const oldStartTime = session.startTime;
+      const oldEndTime = session.endTime;
+      const oldOrganizingCost = session.organizingCost;
+      const oldTeacherPayout = session.teacherPayout;
+
+      // 6) Update the session in-place
+      session.date = new Date(newDate);
+      session.startTime = newStartTime;
+      session.endTime = newEndTime;
+      session.status = "rescheduled";
+      
+      // Update costs if provided
+      if (newOrganizingCost !== undefined) {
+        session.organizingCost = newOrganizingCost;
+      }
+      if (newTeacherPayout !== undefined) {
+        session.teacherPayout = newTeacherPayout;
+      }
+      
+      // point back to itself for clarity
+      session.rescheduledFrom = session.rescheduledFrom || session._id;
+      session.rescheduledTo = session._id;
+      await session.save();
+
+      // 7) Update payments with new session date and time
+      await Payment.updateMany(
+        { classSessionId: sessionId },
+        {
+          $set: {
+            sessionDate: new Date(newDate),
+            'sessionTime.startTime': newStartTime,
+            'sessionTime.endTime': newEndTime,
+            reason: `${session.type === 'Payout' ? 'Teacher payout' : 'Student payment'} for ${classDoc.subject} session on ${newDate} (Rescheduled)`
+          }
+        }
+      );
+
+      // Update teacher payout amount if changed
+      if (newTeacherPayout !== undefined && newTeacherPayout !== oldTeacherPayout) {
+        const tutorUser = await TutorProfile.findOne({ _id: tutorId });
+        if (tutorUser) {
+          await Payment.updateOne(
+            { 
+              classSessionId: sessionId, 
+              type: "Payout", 
+              user: tutorUser.user 
+            },
+            { 
+              $set: { 
+                amount: newTeacherPayout,
+                reason: `Teacher payout for ${classDoc.subject} session on ${newDate} (Rescheduled & Amount Updated)`
+              }
+            }
+          );
+        }
+      }
+
+      // 8) Re-book the room under the new date/time (only for our-space sessions)
+      if (roomId && session.sessionType === 'our-space') {
+        await Room.findByIdAndUpdate(roomId, {
+          $push: {
+            bookings: {
+              date: session.date,
+              startTime: newStartTime,
+              endTime: newEndTime,
+              class: session.class,
+              classSession: session._id
+            }
+          }
+        });
+      }
+
+      // 9) Log activity
+      const costChangeInfo = [];
+      if (newOrganizingCost !== undefined && newOrganizingCost !== oldOrganizingCost) {
+        costChangeInfo.push(`organizing cost updated from ${oldOrganizingCost} to ${newOrganizingCost}`);
+      }
+      if (newTeacherPayout !== undefined && newTeacherPayout !== oldTeacherPayout) {
+        costChangeInfo.push(`teacher payout updated from ${oldTeacherPayout} to ${newTeacherPayout}`);
+      }
+      
+      const costInfo = costChangeInfo.length > 0 ? ` and ${costChangeInfo.join(', ')}` : '';
+        
+      await Activity.create({
+        name: "Session Rescheduled",
+        description:
+          `Session for class ${session.class} moved from ` +
+          `${oldDate.toISOString().split("T")[0]} (${oldStartTime}-${oldEndTime}) ` +
+          `to ${newDate} (${newStartTime}-${newEndTime})${costInfo}`,
+        class: session.class,
+        classSession: session._id,
+        user: userId
+      });
+
+      return res.status(200).json({ status: "success", session });
+    } catch (err) {
+      console.error("rescheduleSession Error:", err);
+      return res.status(500).json({ status: "failed", message: err.message });
+    }
+  },
+
+  // Updated cancelSession function with payment deletion
+  cancelSession: async (req, res) => {
+    try {
+      const { sessionId, reason } = req.body;
+      // assume you have req.user._id from your auth middleware
+      const userId = req.user && req.user._id;
+
+      const session = await ClassSession.findById(sessionId);
+      if (!session) {
+        return res.status(404).json({ status: "failed", message: "Session not found" });
+      }
+
+      // Delete all payments associated with this session
+      const deletedPayments = await Payment.deleteMany({ classSessionId: sessionId });
+      console.log(`Deleted ${deletedPayments.deletedCount} payments for cancelled session`);
+
+      // remove any room booking (only for our-space sessions)
+      if (session.room && session.sessionType === 'our-space') {
+        await Room.findByIdAndUpdate(session.room, {
+          $pull: { bookings: { classSession: session._id } }
+        });
+      }
+
+      // mark cancelled
+      session.status = "cancelled";
+      session.cancellationReason = reason || "";
+      session.cancelledBy = userId || null;
+      session.cancelledAt = new Date();
+      await session.save();
+
+      // log activity
+      await Activity.create({
+        name: "Session Cancelled",
+        description:
+          `Session for class ${session.class} on ` +
+          `${session.date.toISOString().split("T")[0]} ` +
+          `(${session.startTime}-${session.endTime}) cancelled` +
+          (reason ? `: ${reason}` : "") +
+          `. Associated payments have been removed.`,
+        class: session.class,
+        classSession: session._id,
+        user: userId
+      });
+
+      return res.status(200).json({ 
+        status: "success", 
+        session,
+        deletedPayments: deletedPayments.deletedCount
+      });
+    } catch (err) {
+      console.error("cancelSession Error:", err);
+      return res.status(500).json({ status: "failed", message: err.message });
+    }
+  },
+
+  // Keep all other existing functions unchanged
   markClassAsCompleted: async (req, res) => {
     try {
       const { classId } = req.params;
@@ -627,14 +1026,13 @@ const ClassController = {
     }
   },
 
-  // Add this to your ClassController object in class.Controller.js
-
+  // Updated markSessionAsCompleted function with payment completion
   markSessionAsCompleted: async (req, res) => {
     try {
       const { sessionId } = req.params;
       const userId = req.user && req.user._id;
-
-      // Find the session
+  
+      // 1) Find the session
       const session = await ClassSession.findById(sessionId);
       if (!session) {
         return res.status(404).json({
@@ -642,56 +1040,59 @@ const ClassController = {
           message: "Session not found"
         });
       }
-
-      // Check if session is already completed
+  
+      // 2) Guard: already completed?
       if (session.status === "completed") {
         return res.status(400).json({
           status: "failed",
           message: "Session is already marked as completed"
         });
       }
-
-      // Update session status to completed
+  
+      // 3) Mark the session itself completed
       session.status = "completed";
       session.completedAt = new Date();
       session.completedBy = userId || null;
       await session.save();
-
-      // Get the parent class for activity logs
+  
+      // 4) Fetch parent class for logging and notifications
       const classData = await Class.findById(session.class);
-
-      // Create activity log
+  
+      // 5) Create a general activity log
       const newActivity = new Activity({
         name: "Session Completed",
-        description: `Session for ${classData ? classData.subject : 'class'} on ${session.date.toISOString().split("T")[0]
-          } (${session.startTime}-${session.endTime}) has been marked as completed`,
+        description: `Session for ${classData ? classData.subject : 'class'} on ${session.date
+          .toISOString()
+          .split("T")[0]} (${session.startTime}-${session.endTime}) has been marked as completed.`,
         class: session.class,
         classSession: session._id,
         user: userId
       });
       await newActivity.save();
-
-      // Notify tutor if class data exists
+  
+      // 6) Notify tutor
       if (classData) {
-        const tutorUser = await TutorProfile.findOne({ _id: classData.tutor });
-        if (tutorUser) {
+        const tutorProfile = await TutorProfile.findById(classData.tutor);
+        if (tutorProfile) {
           const tutorActivity = new Activity({
             name: "Session Completed",
-            description: `Your session for ${classData.subject} on ${session.date.toISOString().split("T")[0]
-              } (${session.startTime}-${session.endTime}) has been marked as completed`,
+            description: `Your session for ${classData.subject} on ${session.date
+              .toISOString()
+              .split("T")[0]} (${session.startTime}-${session.endTime}) has been marked as completed.`,
             class: session.class,
             classSession: session._id,
-            tutorId: tutorUser.user
+            tutorId: tutorProfile.user
           });
           await tutorActivity.save();
         }
-
-        // Notify students
+  
+        // 7) Notify each student
         for (const student of classData.students) {
           const studentActivity = new Activity({
             name: "Session Completed",
-            description: `Your session for ${classData.subject} on ${session.date.toISOString().split("T")[0]
-              } (${session.startTime}-${session.endTime}) has been marked as completed`,
+            description: `Your session for ${classData.subject} on ${session.date
+              .toISOString()
+              .split("T")[0]} (${session.startTime}-${session.endTime}) has been marked as completed.`,
             class: session.class,
             classSession: session._id,
             studentId: student.id
@@ -699,23 +1100,21 @@ const ClassController = {
           await studentActivity.save();
         }
       }
-
-      // Check if all sessions for this class are now completed
-      // You could optionally auto-complete the class if all sessions are completed
-
+  
+      // 8) Check if *all* sessions for this class are now completed or cancelled
       const allClassSessions = await ClassSession.find({ class: session.class });
-      const pendingSessions = allClassSessions.filter(s => s.status !== "completed" && s.status !== "cancelled");
-
+      const pendingSessions = allClassSessions.filter(
+        (s) => s.status !== "completed" && s.status !== "cancelled"
+      );
       if (pendingSessions.length === 0) {
-        // All sessions are completed or cancelled, you could auto-complete the class
         await Class.findByIdAndUpdate(session.class, { status: "completed" });
       }
-
-
+  
+      // 9) Return success (no payments data)
       res.status(200).json({
         status: "success",
         message: "Session marked as completed successfully",
-        data: session
+        data: { session }
       });
     } catch (error) {
       console.error("markSessionAsCompleted Error:", error);
@@ -726,16 +1125,18 @@ const ClassController = {
       });
     }
   },
+  
+
   deleteSession: async (req, res) => {
     try {
       const { classId, sessionId } = req.body;
-      const exsistingClass = await Class.findById(classId);
-      if (!exsistingClass) {
+      const existingClass = await Class.findById(classId);
+      if (!existingClass) {
         return res
           .status(404)
           .json({ message: "Class not found", status: "failed" });
       }
-      const sessionIndex = exsistingClass.sessions.findIndex(
+      const sessionIndex = existingClass.sessions.findIndex(
         (session) => session._id.toString() === sessionId
       );
       if (sessionIndex < 0) {
@@ -747,8 +1148,8 @@ const ClassController = {
 
       const sessionDates = generateSessionDates(
         startOfDay,
-        exsistingClass.endDate,
-        exsistingClass.sessions[sessionIndex].dayOfWeek
+        existingClass.endDate,
+        existingClass.sessions[sessionIndex]
       );
 
       sessionDates.forEach(async (date) => {
@@ -760,36 +1161,41 @@ const ClassController = {
               { $dateToString: { format: "%Y-%m-%d", date: new Date(date) } },
             ],
           },
-          startTime: exsistingClass.sessions[sessionIndex].startTime,
-          endTime: exsistingClass.sessions[sessionIndex].endTime,
+          startTime: existingClass.sessions[sessionIndex].startTime,
+          endTime: existingClass.sessions[sessionIndex].endTime,
         });
         if (session) {
-          await Room.findByIdAndUpdate(session.room, {
-            $pull: {
-              bookings: {
-                date: session.date,
-                startTime: session.startTime,
-                endTime: session.endTime,
-                class: session.class,
-                classSession: session._id,
+          // Delete payments for this session
+          await Payment.deleteMany({ classSessionId: session._id });
+          
+          // Only remove room bookings for our-space sessions
+          if (session.room && session.sessionType === 'our-space') {
+            await Room.findByIdAndUpdate(session.room, {
+              $pull: {
+                bookings: {
+                  date: session.date,
+                  startTime: session.startTime,
+                  endTime: session.endTime,
+                  class: session.class,
+                  classSession: session._id,
+                },
               },
-            },
-          });
+            });
+          }
           await ClassSession.findByIdAndDelete(session._id);
         }
       });
+      
       //now pull
-      exsistingClass.sessions.splice(sessionIndex, 1);
-      await exsistingClass.save();
+      existingClass.sessions.splice(sessionIndex, 1);
+      await existingClass.save();
       const newActivity = new Activity({
         name: "Session Deleted",
-        description: `Session deleted from ${exsistingClass.subject}`,
+        description: `Session deleted from ${existingClass.subject} and associated payments removed`,
         class: classId,
       });
       await newActivity.save();
       res.status(200).json({ status: "success", message: "Session deleted" });
-
-      //now remove all sessions for this date
     } catch (error) {
       res.status(500).json({
         message: "Error deleting session",
@@ -821,17 +1227,18 @@ const ClassController = {
       });
     }
   },
+
   getAllSessions: async (req, res) => {
     try {
       const sessions = await ClassSession.find()
         // only the top‐level session props we care about
-        .select('date startTime endTime status class room')
+        .select('date startTime endTime status class room sessionType organizingCost teacherPayout totalStudentRevenue')
         // populate and limit the class sub‐doc to the essentials
         .populate({
           path: 'class',
-          select: 'subject startDate endDate tutor students',
+          select: 'subject startDate endDate tutor students sessionType',
           populate: [
-            // pull in just the tutor’s User info
+            // pull in just the tutor's User info
             {
               path: 'tutor',
               model: 'TutorProfile',
@@ -842,7 +1249,7 @@ const ClassController = {
                 select: 'firstName lastName email'
               }
             },
-            // pull in just each student’s User info
+            // pull in just each student's User info
             {
               path: 'students.id',
               model: 'User',
@@ -850,7 +1257,7 @@ const ClassController = {
             }
           ]
         })
-        // populate only the room’s name & description
+        // populate only the room's name & description
         .populate('room', 'name description')
         .lean();
 
@@ -863,78 +1270,7 @@ const ClassController = {
       });
     }
   },
-  assignRoomToSession: async (req, res) => {
-    try {
-      const { roomId, sessionId } = req.body;
-      const session = await ClassSession.findById(sessionId);
-      if (!session) {
-        return res
-          .status(404)
-          .json({ message: "Session not found", status: "failed" });
-      }
-      //check if already assigned a room if yes then remove the booking from that room
-      if (session.room) {
-        const room = await Room.findById(session.room);
-        const bookingIndex = room.bookings.findIndex(
-          (booking) => booking.classSession.toString() === sessionId
-        );
-        await Room.findByIdAndUpdate(session.room, {
-          $pull: {
-            bookings: room.bookings[bookingIndex],
-          },
-        });
-      }
-      const room = await Room.findById(roomId);
-      if (!room) {
-        return res
-          .status(404)
-          .json({ message: "Room not found", status: "failed" });
-      }
-      const isRoomAvailable = await checkRoomAvailability(
-        roomId,
-        session.date,
-        session.startTime,
-        session.endTime
-      );
-      if (!isRoomAvailable) {
-        return res.status(400).json({
-          message: "Room not available for this time slot",
-          status: "failed",
-        });
-      }
-      await Room.findByIdAndUpdate(roomId, {
-        $push: {
-          bookings: {
-            date: session.date,
-            startTime: session.startTime,
-            endTime: session.endTime,
-            class: session.class,
-            classSession: session._id,
-          },
-        },
-      });
-      const class_name = await Class.findById(session.class);
-      await ClassSession.findByIdAndUpdate(sessionId, { room: roomId });
-      const newActivity = new Activity({
-        name: "Room Assigned",
-        description: `Room ${room.name} assigned to session for ${class_name.subject
-          } on ${session.date.toISOString().split("T")[0]} at ${session.startTime
-          }-${session.endTime}`,
-        class: session.class,
-        classSession: session._id,
-      });
-      await newActivity.save();
-      res
-        .status(200)
-        .json({ message: "Room assigned to session", status: "success" });
-    } catch (error) {
-      res.status(500).json({
-        message: "Error assigning room to session",
-        error: error.message,
-        status: "Error",
-      });
-    }
-  },
+
   unassignRoomFromSession: async (req, res) => {
     try {
       const { sessionId } = req.body;
@@ -950,6 +1286,15 @@ const ClassController = {
           status: "failed",
         });
       }
+      
+      // Check if the session type allows room unassignment
+      if (session.sessionType !== 'our-space') {
+        return res.status(400).json({
+          message: "Room unassignment is only allowed for 'our-space' sessions",
+          status: "failed",
+        });
+      }
+      
       //remove the booking from room
       const room = await Room.findById(session.room);
       const bookingIndex = room.bookings.findIndex(
@@ -964,14 +1309,13 @@ const ClassController = {
       const updatedSession = await ClassSession.findByIdAndUpdate(sessionId, {
         room: null,
       });
-      const newAcitivity = new Activity({
+      const newActivity = new Activity({
         name: "Room Unassigned",
-        description: `Room ${room.name} unassigned from session for ${session.class
-          } on ${session.date.toISOString().split("T")[0]} at ${session.startTime
-          }-${session.endTime}`,
+        description: `Room ${room.name} unassigned from session for ${session.class} on ${session.date.toISOString().split("T")[0]} at ${session.startTime}-${session.endTime}`,
         class: session.class,
         classSession: session._id,
       });
+      await newActivity.save();
       res
         .status(200)
         .json({ message: "Room unassigned from session", status: "success" });
@@ -983,536 +1327,695 @@ const ClassController = {
       });
     }
   },
-  cancelSession: async (req, res) => {
-    try {
-      const { sessionId, reason } = req.body;
-      // assume you have req.user._id from your auth middleware
-      const userId = req.user && req.user._id;
-
-      const session = await ClassSession.findById(sessionId);
-      if (!session) {
-        return res.status(404).json({ status: "failed", message: "Session not found" });
-      }
-
-      // remove any room booking
-      if (session.room) {
-        await Room.findByIdAndUpdate(session.room, {
-          $pull: { bookings: { classSession: session._id } }
-        });
-      }
-
-      // mark cancelled
-      session.status = "cancelled";
-      session.cancellationReason = reason || "";
-      session.cancelledBy = userId || null;
-      session.cancelledAt = new Date();
-      await session.save();
-
-      // log activity
-      await Activity.create({
-        name: "Session Cancelled",
-        description:
-          `Session for class ${session.class} on ` +
-          `${session.date.toISOString().split("T")[0]} ` +
-          `(${session.startTime}-${session.endTime}) cancelled` +
-          (reason ? `: ${reason}` : ""),
-        class: session.class,
-        classSession: session._id,
-        user: userId
-      });
-
-      return res.status(200).json({ status: "success", session });
-    } catch (err) {
-      console.error("cancelSession Error:", err);
-      return res.status(500).json({ status: "failed", message: err.message });
-    }
-  },
-
-
-  rescheduleSession: async (req, res) => {
-    try {
-      const { sessionId, newDate, newStartTime, newEndTime, newSessionCost } = req.body;
-      const userId = req.user && req.user._id;
-  
-      // 1) Load the existing session
-      const session = await ClassSession.findById(sessionId);
-      if (!session) {
-        return res.status(404).json({ status: "failed", message: "Session not found" });
-      }
-  
-      // 2) Load the parent class to know tutor & room
-      const classDoc = await Class.findById(session.class);
-      if (!classDoc) {
-        return res.status(404).json({ status: "failed", message: "Parent class not found" });
-      }
-      const tutorId = classDoc.tutor;
-      const roomId = session.room;
-  
-      // 3) Remove the old room booking
-      if (roomId) {
-        await Room.findByIdAndUpdate(roomId, {
-          $pull: { bookings: { classSession: session._id } }
-        });
-      }
-  
-      // 4) Validate tutor & room availability on the new slot
-      const okTutor = await checkTutorAvailability(tutorId, newDate, newStartTime, newEndTime);
-      if (!okTutor) {
-        return res.status(400).json({ status: "failed", message: "Tutor unavailable at that time" });
-      }
-      const okRoom = await checkRoomAvailability(roomId, newDate, newStartTime, newEndTime);
-      if (!okRoom) {
-        return res.status(400).json({ status: "failed", message: "Room unavailable at that time" });
-      }
-  
-      // 5) Record old values for activity log
-      const oldDate = session.date;
-      const oldStartTime = session.startTime;
-      const oldEndTime = session.endTime;
-      const oldSessionCost = session.sessionCost;
-  
-      // 6) Update the session in-place
-      session.date = new Date(newDate);
-      session.startTime = newStartTime;
-      session.endTime = newEndTime;
-      session.status = "rescheduled";
-      // Update session cost if provided
-      if (newSessionCost !== undefined) {
-        session.sessionCost = newSessionCost;
-      }
-      // point back to itself for clarity
-      session.rescheduledFrom = session.rescheduledFrom || session._id;
-      session.rescheduledTo = session._id;
-      await session.save();
-  
-      // 7) Re-book the room under the new date/time
-      if (roomId) {
-        await Room.findByIdAndUpdate(roomId, {
-          $push: {
-            bookings: {
-              date: session.date,
-              startTime: newStartTime,
-              endTime: newEndTime,
-              class: session.class,
-              classSession: session._id
-            }
-          }
-        });
-      }
-  
-      // 8) Log activity
-      const costChangeInfo = newSessionCost !== undefined && newSessionCost !== oldSessionCost
-        ? ` and cost updated from ${oldSessionCost} to ${newSessionCost}`
-        : '';
-        
-      await Activity.create({
-        name: "Session Rescheduled",
-        description:
-          `Session for class ${session.class} moved from ` +
-          `${oldDate.toISOString().split("T")[0]} (${oldStartTime}-${oldEndTime}) ` +
-          `to ${newDate} (${newStartTime}-${newEndTime})${costChangeInfo}`,
-        class: session.class,
-        classSession: session._id,
-        user: userId
-      });
-  
-      return res.status(200).json({ status: "success", session });
-    } catch (err) {
-      console.error("rescheduleSession Error:", err);
-      return res.status(500).json({ status: "failed", message: err.message });
-    }
-  },
-
-
 
   getDashboardStats: async (req, res) => {
     try {
-      // Get the date range based on timeframe (default to last 7 days for "Week")
       const timeframe = req.query.timeframe || "Week";
+      const currentDate = new Date();
       
-      const endDate = new Date();
-      const startDate = new Date();
-      
-      if (timeframe === "Week") {
-        startDate.setDate(startDate.getDate() - 7);
-      } else if (timeframe === "Month") {
-        startDate.setMonth(startDate.getMonth() - 1);
-      } else if (timeframe === "Year") {
-        startDate.setFullYear(startDate.getFullYear() - 1);
-      }
+      // FIXED: Helper function to get date ranges - includes both past and future
+      const getDateRange = (period) => {
+        const today = new Date();
+        let start = new Date();
+        let end = new Date();
+        
+        switch (period) {
+          case "Day":
+            start.setHours(0, 0, 0, 0);
+            end.setHours(23, 59, 59, 999);
+            break;
+          case "Week":
+            // FIXED: Get current week (Sunday to Saturday) or last 7 days including future
+            start.setDate(today.getDate() - 3); // 3 days back
+            end.setDate(today.getDate() + 4);   // 4 days forward (total 7 days)
+            break;
+          case "Month":
+            start = new Date(today.getFullYear(), today.getMonth(), 1);
+            end = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+            break;
+          case "Year":
+            start = new Date(today.getFullYear(), 0, 1);
+            end = new Date(today.getFullYear(), 11, 31, 23, 59, 59, 999);
+            break;
+          default:
+            start.setDate(today.getDate() - 3);
+            end.setDate(today.getDate() + 4);
+        }
+        
+        return { start, end };
+      };
   
-      // Get basic stats
+      // Get all time ranges for comprehensive stats
+      const dailyRange = getDateRange("Day");
+      const weeklyRange = getDateRange("Week");
+      const monthlyRange = getDateRange("Month");
+      const yearlyRange = getDateRange("Year");
+      const selectedRange = getDateRange(timeframe);
+  
+      console.log(`Selected range for ${timeframe}:`, selectedRange);
+  
+      // ======================
+      // BASIC ENTITY COUNTS
+      // ======================
       const totalClasses = await Class.countDocuments();
       const activeClasses = await Class.countDocuments({ status: "active" });
+      const completedClasses = await Class.countDocuments({ status: "completed" });
+      const totalTutors = await TutorProfile.countDocuments();
+      const activeTutors = await TutorProfile.countDocuments({ isActive: true });
+      const totalRooms = await Room.countDocuments();
+      const activeRooms = await Room.countDocuments({ isActive: true });
   
-      // Get new students (those who joined in the selected timeframe)
-      const newStudents = await User.countDocuments({
-        role: "student",
-        createdAt: { $gte: startDate, $lte: endDate }
-      });
-  
-      // Get all students from active classes
-      const classes = await Class.find({ status: "active" });
+      // Get unique students from all classes
+      const allClasses = await Class.find({});
       const uniqueStudents = new Set();
-      classes.forEach((cls) => {
-        cls.students.forEach((student) => {
+      const activeStudents = new Set();
+      
+      allClasses.forEach(cls => {
+        cls.students.forEach(student => {
           uniqueStudents.add(student.id.toString());
+          if (cls.status === "active") {
+            activeStudents.add(student.id.toString());
+          }
         });
       });
+      const totalStudents = uniqueStudents.size;
+      const totalActiveStudents = activeStudents.size;
   
-      // Get payments for revenue calculation
-      const payments = await Payment.find({
-        createdAt: { $gte: startDate, $lte: endDate },
-        type: "Payment",
-        status: "completed",
+      // New students in selected timeframe
+      const newStudents = await User.countDocuments({
+        role: "student",
+        createdAt: { $gte: selectedRange.start, $lte: selectedRange.end }
       });
   
-      // Calculate daily revenue
-      const dailyRevenue = {};
-      const lastPeriodRevenue = {};
-  
-      // Initialize days for current period
-      const daysToInitialize = timeframe === "Week" ? 7 : timeframe === "Month" ? 30 : 12;
-      for (let i = 0; i < daysToInitialize; i++) {
-        const date = new Date();
-        
-        if (timeframe === "Week") {
-          date.setDate(date.getDate() - i);
-          const dateStr = date.toISOString().split("T")[0];
-          dailyRevenue[dateStr] = 0;
-        } else if (timeframe === "Month") {
-          date.setDate(date.getDate() - i);
-          const dateStr = date.toISOString().split("T")[0];
-          dailyRevenue[dateStr] = 0;
-        } else if (timeframe === "Year") {
-          date.setMonth(date.getMonth() - i);
-          const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-          dailyRevenue[dateStr] = 0;
-        }
-      }
-  
-      // Calculate revenue for current period (all student payments)
-      payments.forEach((payment) => {
-        const date = new Date(payment.createdAt);
-        let dateStr;
-        
-        if (timeframe === "Week" || timeframe === "Month") {
-          dateStr = date.toISOString().split("T")[0];
-        } else { // Year
-          dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-        }
-        
-        if (dailyRevenue[dateStr] !== undefined) {
-          dailyRevenue[dateStr] += payment.amount;
-        }
+      // New tutors in selected timeframe
+      const newTutors = await TutorProfile.countDocuments({
+        createdAt: { $gte: selectedRange.start, $lte: selectedRange.end }
       });
   
-      // Get previous period's payments for comparison
-      const prevPeriodStart = new Date(startDate);
-      const prevPeriodEnd = new Date(startDate);
+      // New classes in selected timeframe
+      const newClasses = await Class.countDocuments({
+        createdAt: { $gte: selectedRange.start, $lte: selectedRange.end }
+      });
+  
+      // ======================
+      // FINANCIAL DATA FETCHING
+      // ======================
       
-      if (timeframe === "Week") {
-        prevPeriodStart.setDate(prevPeriodStart.getDate() - 7);
-      } else if (timeframe === "Month") {
-        prevPeriodStart.setMonth(prevPeriodStart.getMonth() - 1);
-      } else if (timeframe === "Year") {
-        prevPeriodStart.setFullYear(prevPeriodStart.getFullYear() - 1);
-      }
+      // FIXED: Helper function with better date matching logic
+      const getFinancialData = async (startDate, endDate) => {
+        console.log(`Getting financial data for: ${startDate} to ${endDate}`);
+        
+        // Get all student payments (revenue) - using createdAt
+        const revenuePayments = await Payment.find({
+          createdAt: { $gte: startDate, $lte: endDate },
+          type: "Payment",
+          status: "completed"
+        });
   
-      const prevPeriodPayments = await Payment.find({
-        createdAt: { $gte: prevPeriodStart, $lt: startDate },
-        type: "Payment",
-        status: "completed",
+        // Get all tutor payouts (expenses) - using createdAt
+        const payoutPayments = await Payment.find({
+          createdAt: { $gte: startDate, $lte: endDate },
+          type: "Payout",
+          status: "completed"
+        });
+  
+        // FIXED: Get sessions using date field AND include broader statuses
+        const sessions = await ClassSession.find({
+          date: { $gte: startDate, $lte: endDate },
+          status: { $in: ["completed", "cancelled", "scheduled"] } // Include scheduled sessions too
+        });
+  
+        console.log(`Found ${sessions.length} sessions in date range`);
+        sessions.forEach(session => {
+          console.log(`Session ${session._id}: date=${session.date}, status=${session.status}, organizingCost=${session.organizingCost}`);
+        });
+  
+        const revenue = revenuePayments.reduce((sum, payment) => sum + payment.amount, 0);
+        const tutorPayouts = payoutPayments.reduce((sum, payment) => sum + payment.amount, 0);
+        
+        // FIXED: Better organizing costs calculation
+        const organizingCosts = sessions.reduce((sum, session) => {
+          const cost = session.organizingCost;
+          if (typeof cost === 'number' && !isNaN(cost) && cost >= 0) {
+            console.log(`Adding organizing cost: ${cost} from session ${session._id}`);
+            return sum + cost;
+          }
+          console.log(`Skipping session ${session._id} - invalid organizingCost: ${cost}`);
+          return sum;
+        }, 0);
+        
+        console.log(`Total organizing costs: ${organizingCosts}`);
+        
+        const totalExpenses = tutorPayouts + organizingCosts;
+        const profit = revenue - totalExpenses;
+  
+        return {
+          revenue,
+          tutorPayouts,
+          organizingCosts,
+          totalExpenses,
+          profit,
+          revenuePayments: revenuePayments.length,
+          payoutPayments: payoutPayments.length,
+          sessionsCount: sessions.length
+        };
+      };
+  
+      // Get financial data for all time periods
+      const dailyFinancials = await getFinancialData(dailyRange.start, dailyRange.end);
+      const weeklyFinancials = await getFinancialData(weeklyRange.start, weeklyRange.end);
+      const monthlyFinancials = await getFinancialData(monthlyRange.start, monthlyRange.end);
+      const yearlyFinancials = await getFinancialData(yearlyRange.start, yearlyRange.end);
+      const selectedFinancials = await getFinancialData(selectedRange.start, selectedRange.end);
+  
+      // Get all-time totals
+      const allTimeRevenue = await Payment.aggregate([
+        { $match: { type: "Payment", status: "completed" } },
+        { $group: { _id: null, total: { $sum: "$amount" } } }
+      ]);
+  
+      const allTimeTutorPayouts = await Payment.aggregate([
+        { $match: { type: "Payout", status: "completed" } },
+        { $group: { _id: null, total: { $sum: "$amount" } } }
+      ]);
+  
+      // FIXED: All-time organizing costs with better filtering
+      const allTimeOrgCosts = await ClassSession.aggregate([
+        { 
+          $match: { 
+            organizingCost: { $exists: true, $type: "number", $gte: 0 },
+            status: { $in: ["completed", "cancelled", "scheduled"] }
+          } 
+        },
+        { $group: { _id: null, total: { $sum: "$organizingCost" } } }
+      ]);
+  
+      const totalRevenue = allTimeRevenue[0]?.total || 0;
+      const totalTutorPayouts = allTimeTutorPayouts[0]?.total || 0;
+      const totalOrgCosts = allTimeOrgCosts[0]?.total || 0;
+      const totalExpenses = totalTutorPayouts + totalOrgCosts;
+      const totalProfit = totalRevenue - totalExpenses;
+  
+      console.log(`All-time totals: Revenue=${totalRevenue}, TutorPayouts=${totalTutorPayouts}, OrgCosts=${totalOrgCosts}`);
+  
+      // ======================
+      // GROWTH CALCULATIONS
+      // ======================
+      
+      const prevPeriodStart = new Date(selectedRange.start);
+      const prevPeriodEnd = new Date(selectedRange.start);
+      const periodLength = selectedRange.end - selectedRange.start;
+      prevPeriodStart.setTime(prevPeriodStart.getTime() - periodLength);
+  
+      const prevPeriodFinancials = await getFinancialData(prevPeriodStart, prevPeriodEnd);
+  
+      const revenueGrowth = prevPeriodFinancials.revenue > 0 
+        ? ((selectedFinancials.revenue - prevPeriodFinancials.revenue) / prevPeriodFinancials.revenue * 100)
+        : selectedFinancials.revenue > 0 ? 100 : 0;
+  
+      const profitGrowth = prevPeriodFinancials.profit !== 0
+        ? ((selectedFinancials.profit - prevPeriodFinancials.profit) / Math.abs(prevPeriodFinancials.profit) * 100)
+        : selectedFinancials.profit > 0 ? 100 : selectedFinancials.profit < 0 ? -100 : 0;
+  
+      // ======================
+      // DETAILED BREAKDOWNS
+      // ======================
+  
+      const generateTimeSeriesData = (startDate, endDate, interval = 'day') => {
+        const data = [];
+        const current = new Date(startDate);
+        
+        while (current <= endDate) {
+          let dateKey, displayName;
+          const nextPeriod = new Date(current);
+          
+          if (interval === 'day') {
+            dateKey = current.toISOString().split('T')[0];
+            displayName = current.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            nextPeriod.setDate(nextPeriod.getDate() + 1);
+          } else if (interval === 'week') {
+            dateKey = current.toISOString().split('T')[0];
+            displayName = `Week ${Math.ceil(current.getDate() / 7)}`;
+            nextPeriod.setDate(nextPeriod.getDate() + 7);
+          } else if (interval === 'month') {
+            dateKey = `${current.getFullYear()}-${(current.getMonth() + 1).toString().padStart(2, '0')}`;
+            displayName = current.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+            nextPeriod.setMonth(nextPeriod.getMonth() + 1);
+          }
+          
+          data.push({
+            date: dateKey,
+            displayName,
+            revenue: 0,
+            expenses: 0,
+            profit: 0,
+            tutorPayouts: 0,
+            organizingCosts: 0,
+            sessions: 0
+          });
+          
+          current.setTime(nextPeriod.getTime());
+        }
+        
+        return data;
+      };
+  
+      const getInterval = () => {
+        switch (timeframe) {
+          case "Week": return 'day';
+          case "Month": return 'day';
+          case "Year": return 'month';
+          default: return 'day';
+        }
+      };
+  
+      let timeSeriesData = generateTimeSeriesData(selectedRange.start, selectedRange.end, getInterval());
+  
+      // FIXED: Get all sessions with their associated payments for consistent date mapping
+      const periodSessions = await ClassSession.find({
+        date: { $gte: selectedRange.start, $lte: selectedRange.end },
+        status: { $in: ["completed", "cancelled", "scheduled"] }
+      }).populate({
+        path: 'class',
+        select: 'tutor students'
       });
   
-      // Calculate previous period's revenue for comparison
-      prevPeriodPayments.forEach((payment) => {
-        const date = new Date(payment.createdAt);
-        let adjustedDate = new Date(date);
+      // Get all payments within the selected period
+      const allPayments = await Payment.find({
+        createdAt: { $gte: selectedRange.start, $lte: selectedRange.end },
+        status: "completed"
+      }).populate('classSessionId');
+  
+      console.log(`Time series data: Found ${allPayments.length} payments, ${periodSessions.length} sessions`);
+  
+      // FIXED: Use SESSION DATE for all financial data to ensure consistency
+      periodSessions.forEach(session => {
+        const sessionDate = new Date(session.date);
+        let dateKey;
         
-        if (timeframe === "Week") {
-          adjustedDate.setDate(adjustedDate.getDate() + 7); // Shift to current week for comparison
-          const dateStr = adjustedDate.toISOString().split("T")[0];
-          lastPeriodRevenue[dateStr] = (lastPeriodRevenue[dateStr] || 0) + payment.amount;
-        } else if (timeframe === "Month") {
-          adjustedDate.setMonth(adjustedDate.getMonth() + 1); // Shift to current month
-          const dateStr = adjustedDate.toISOString().split("T")[0];
-          lastPeriodRevenue[dateStr] = (lastPeriodRevenue[dateStr] || 0) + payment.amount;
-        } else if (timeframe === "Year") {
-          adjustedDate.setFullYear(adjustedDate.getFullYear() + 1); // Shift to current year
-          const dateStr = `${adjustedDate.getFullYear()}-${(adjustedDate.getMonth() + 1).toString().padStart(2, '0')}`;
-          lastPeriodRevenue[dateStr] = (lastPeriodRevenue[dateStr] || 0) + payment.amount;
+        if (getInterval() === 'day') {
+          dateKey = sessionDate.toISOString().split('T')[0];
+        } else {
+          dateKey = `${sessionDate.getFullYear()}-${(sessionDate.getMonth() + 1).toString().padStart(2, '0')}`;
+        }
+        
+        const dataPoint = timeSeriesData.find(d => d.date === dateKey);
+        if (dataPoint) {
+          // Add organizing costs
+          const orgCost = session.organizingCost;
+          if (typeof orgCost === 'number' && !isNaN(orgCost) && orgCost >= 0) {
+            dataPoint.organizingCosts += orgCost;
+            dataPoint.expenses += orgCost;
+            console.log(`Added ${orgCost} organizing cost to ${dateKey} for session ${session._id}`);
+          }
+  
+          // Add tutor payouts for this session
+          const sessionPayouts = allPayments.filter(payment => 
+            payment.type === "Payout" && 
+            payment.classSessionId && 
+            payment.classSessionId._id.toString() === session._id.toString()
+          );
+          
+          sessionPayouts.forEach(payout => {
+            dataPoint.tutorPayouts += payout.amount;
+            dataPoint.expenses += payout.amount;
+            console.log(`Added ${payout.amount} tutor payout to ${dateKey} for session ${session._id}`);
+          });
+  
+          // Add revenue for this session
+          const sessionRevenue = allPayments.filter(payment => 
+            payment.type === "Payment" && 
+            payment.classSessionId && 
+            payment.classSessionId._id.toString() === session._id.toString()
+          );
+          
+          sessionRevenue.forEach(payment => {
+            dataPoint.revenue += payment.amount;
+            console.log(`Added ${payment.amount} revenue to ${dateKey} for session ${session._id}`);
+          });
+  
+          dataPoint.sessions += 1;
         }
       });
   
-      // Get all expenses (teacher payouts + class costs)
-      
-      // 1. Get tutor payouts for the current period
-      const tutorPayouts = await Payment.find({
-        createdAt: { $gte: startDate, $lte: endDate },
-        type: "Payout",
-        status: "completed",
-      });
-  
-      // Calculate total tutor payouts
-      const totalTutorPayouts = tutorPayouts.reduce(
-        (total, payment) => total + payment.amount,
-        0
+      // FIXED: Also handle payments that might not be linked to specific sessions
+      // This ensures all payments are captured even if session linking is incomplete
+      const unlinkedPayments = allPayments.filter(payment => 
+        !payment.classSessionId || 
+        !periodSessions.find(session => session._id.toString() === payment.classSessionId._id?.toString())
       );
   
-      // 2. Get class costs for classes with sessions in the current period
-      // First, get all class sessions in the date range
-      const classSessions = await ClassSession.find({
-        date: { $gte: startDate, $lte: endDate }
-      });
-      
-      // Get all unique class IDs from these sessions
-      const classIds = [...new Set(classSessions.map(session => 
-        session.class ? session.class.toString() : null).filter(id => id !== null))];
-      
-      // Fetch the actual class documents with their costs
-      const classesWithCosts = await Class.find({
-        _id: { $in: classIds }
-      });
-      
-      // Debug to see what classes are found and their costs
-      console.log("Classes with costs:", classesWithCosts.map(c => ({ 
-        id: c._id, 
-        classCost: c.classCost || 0 
-      })));
-      
-      // Calculate total class costs (once per class, not per session)
-      // We count each class cost only once in the period
-      const totalClassCosts = classesWithCosts.reduce((total, cls) => {
-        return total + (cls.classCost || 0);
-      }, 0);
-      
-      console.log("Total Class Cost:", totalClassCosts);
-  
-      // Track daily expenses (tutor payouts + class costs)
-      const dailyExpenses = { ...dailyRevenue }; // Start with same structure as revenue
-      Object.keys(dailyExpenses).forEach(key => { dailyExpenses[key] = 0; }); // Reset all values to 0
-  
-      // Track daily expenses by type for detailed breakdown
-      const dailyTutorPayouts = { ...dailyExpenses };
-      const dailyClassCosts = { ...dailyExpenses };
-  
-      // Add tutor payouts to expenses
-      tutorPayouts.forEach(payment => {
-        const date = new Date(payment.createdAt);
-        let dateStr;
+      unlinkedPayments.forEach(payment => {
+        const paymentDate = new Date(payment.createdAt);
+        let dateKey;
         
-        if (timeframe === "Week" || timeframe === "Month") {
-          dateStr = date.toISOString().split("T")[0];
-        } else { // Year
-          dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+        if (getInterval() === 'day') {
+          dateKey = paymentDate.toISOString().split('T')[0];
+        } else {
+          dateKey = `${paymentDate.getFullYear()}-${(paymentDate.getMonth() + 1).toString().padStart(2, '0')}`;
         }
         
-        if (dailyExpenses[dateStr] !== undefined) {
-          dailyExpenses[dateStr] += payment.amount;
-          dailyTutorPayouts[dateStr] += payment.amount;
+        const dataPoint = timeSeriesData.find(d => d.date === dateKey);
+        if (dataPoint) {
+          if (payment.type === "Payment") {
+            dataPoint.revenue += payment.amount;
+            console.log(`Added ${payment.amount} unlinked revenue to ${dateKey}`);
+          } else if (payment.type === "Payout") {
+            dataPoint.tutorPayouts += payment.amount;
+            dataPoint.expenses += payment.amount;
+            console.log(`Added ${payment.amount} unlinked payout to ${dateKey}`);
+          }
         }
       });
   
-      // Create a map to associate class costs with dates of their sessions
-      // This distributes class costs across the days they have sessions
-      const classSessionDates = {};
-      
-      classSessions.forEach(session => {
-        const classId = session.class ? session.class.toString() : null;
-        if (!classId) return;
-        
-        const dateObj = new Date(session.date);
-        let dateStr;
-        
-        if (timeframe === "Week" || timeframe === "Month") {
-          dateStr = dateObj.toISOString().split("T")[0];
-        } else { // Year
-          dateStr = `${dateObj.getFullYear()}-${(dateObj.getMonth() + 1).toString().padStart(2, '0')}`;
-        }
-        
-        if (!classSessionDates[classId]) {
-          classSessionDates[classId] = [];
-        }
-        
-        if (!classSessionDates[classId].includes(dateStr)) {
-          classSessionDates[classId].push(dateStr);
-        }
+      // Calculate profit for each data point
+      timeSeriesData.forEach(dataPoint => {
+        dataPoint.profit = dataPoint.revenue - dataPoint.expenses;
       });
+  
+      // VALIDATION: Ensure daily totals match weekly totals
+      const dailyTotals = timeSeriesData.reduce((totals, point) => {
+        totals.revenue += point.revenue;
+        totals.expenses += point.expenses;
+        totals.profit += point.profit;
+        totals.tutorPayouts += point.tutorPayouts;
+        totals.organizingCosts += point.organizingCosts;
+        totals.sessions += point.sessions;
+        return totals;
+      }, { revenue: 0, expenses: 0, profit: 0, tutorPayouts: 0, organizingCosts: 0, sessions: 0 });
+  
+      console.log('=== VALIDATION ===');
+      console.log('Weekly totals from getFinancialData:', {
+        revenue: selectedFinancials.revenue,
+        expenses: selectedFinancials.totalExpenses,
+        profit: selectedFinancials.profit,
+        tutorPayouts: selectedFinancials.tutorPayouts,
+        organizingCosts: selectedFinancials.organizingCosts,
+        sessions: selectedFinancials.sessionsCount
+      });
+      console.log('Daily totals from time series:', dailyTotals);
       
-      // Distribute class costs across days with sessions
-      classesWithCosts.forEach(cls => {
-        const classId = cls._id.toString();
-        const classCost = cls.classCost || 0;
+      // If there's a mismatch, adjust the data to match weekly totals
+      if (Math.abs(dailyTotals.revenue - selectedFinancials.revenue) > 0.01 ||
+          Math.abs(dailyTotals.expenses - selectedFinancials.totalExpenses) > 0.01) {
         
-        // Get session dates for this class
-        const sessionDates = classSessionDates[classId] || [];
+        console.log('MISMATCH DETECTED - Adjusting time series to match weekly totals');
         
-        if (sessionDates.length > 0) {
-          // If there are session dates, distribute the cost
-          const costPerSession = classCost / sessionDates.length;
+        // Find the day with the highest activity to add any missing amounts
+        const mostActiveDay = timeSeriesData.reduce((max, point) => 
+          (point.revenue + point.expenses) > (max.revenue + max.expenses) ? point : max
+        );
+        
+        // Adjust to match weekly totals
+        const revenueDiff = selectedFinancials.revenue - dailyTotals.revenue;
+        const expensesDiff = selectedFinancials.totalExpenses - dailyTotals.expenses;
+        
+        if (mostActiveDay && (Math.abs(revenueDiff) > 0.01 || Math.abs(expensesDiff) > 0.01)) {
+          mostActiveDay.revenue += revenueDiff;
+          mostActiveDay.expenses += expensesDiff;
+          mostActiveDay.profit = mostActiveDay.revenue - mostActiveDay.expenses;
           
-          sessionDates.forEach(dateStr => {
-            if (dailyExpenses[dateStr] !== undefined) {
-              dailyExpenses[dateStr] += costPerSession;
-              dailyClassCosts[dateStr] += costPerSession;
-            }
-          });
+          console.log(`Adjusted ${mostActiveDay.date}: revenue +${revenueDiff}, expenses +${expensesDiff}`);
         }
-      });
-  
-      // Calculate gross profit (revenue - expenses) for each day
-      const dailyGrossProfit = {};
-      Object.keys(dailyRevenue).forEach(dateStr => {
-        dailyGrossProfit[dateStr] = dailyRevenue[dateStr] - dailyExpenses[dateStr];
-      });
-  
-      // Calculate total revenue for the current period
-      const totalRevenue = Object.values(dailyRevenue).reduce((sum, value) => sum + value, 0);
-      
-      // Calculate total revenue for the previous period
-      const totalPrevRevenue = Object.values(lastPeriodRevenue).reduce((sum, value) => sum + value, 0);
-      
-      // Calculate total expenses for the current period
-      const totalExpenses = totalTutorPayouts + totalClassCosts;
-      
-      // Calculate total gross profit
-      const totalGrossProfit = totalRevenue - totalExpenses;
-  
-      // Calculate percentage changes
-      const revenueChange = totalPrevRevenue
-        ? (((totalRevenue - totalPrevRevenue) / totalPrevRevenue) * 100).toFixed(2)
-        : 0;
-  
-      // Calculate today's revenue and gross profit
-      const todayStr = new Date().toISOString().split("T")[0];
-      const todayRevenue = dailyRevenue[todayStr] || 0;
-      const todayGrossProfit = dailyGrossProfit[todayStr] || 0;
-  
-      // Format data for weekly charts
-      let formattedRevenueData = [];
-      let formattedProfitData = [];
-      
-      if (timeframe === "Week" || timeframe === "Month") {
-        // For Week and Month, show daily data points
-        formattedRevenueData = Object.entries(dailyRevenue)
-          .map(([day, revenue]) => ({
-            day: new Date(day).toLocaleDateString("en-US", { weekday: "short" }),
-            revenue,
-            expenses: dailyExpenses[day] || 0,
-            tutorPayout: dailyTutorPayouts[day] || 0,
-            classCost: dailyClassCosts[day] || 0,
-            comparison: lastPeriodRevenue[day] || 0,
-          }))
-          .reverse();
-        
-        formattedProfitData = Object.entries(dailyGrossProfit)
-          .map(([day, profit]) => ({
-            day: new Date(day).toLocaleDateString("en-US", { weekday: "short" }),
-            profit,
-            revenue: dailyRevenue[day] || 0,
-            expenses: dailyExpenses[day] || 0,
-          }))
-          .reverse();
-      } else {
-        // For Year, show monthly data points
-        formattedRevenueData = Object.entries(dailyRevenue)
-          .map(([month, revenue]) => {
-            const [year, monthNum] = month.split('-');
-            return {
-              day: new Date(parseInt(year), parseInt(monthNum) - 1, 1).toLocaleDateString("en-US", { month: "short" }),
-              revenue,
-              expenses: dailyExpenses[month] || 0,
-              tutorPayout: dailyTutorPayouts[month] || 0,
-              classCost: dailyClassCosts[month] || 0,
-              comparison: lastPeriodRevenue[month] || 0,
-            };
-          })
-          .reverse();
-        
-        formattedProfitData = Object.entries(dailyGrossProfit)
-          .map(([month, profit]) => {
-            const [year, monthNum] = month.split('-');
-            return {
-              day: new Date(parseInt(year), parseInt(monthNum) - 1, 1).toLocaleDateString("en-US", { month: "short" }),
-              profit,
-              revenue: dailyRevenue[month] || 0,
-              expenses: dailyExpenses[month] || 0,
-            };
-          })
-          .reverse();
       }
   
-      // Get active tutors for the sidebar
-      const activeTutors = await TutorProfile.find()
-        .populate("user", "firstName lastName")
-        .limit(7);
+      // ======================
+      // ADVANCED METRICS
+      // ======================
   
-      const formattedTutors = activeTutors.map((tutor) => ({
-        id: tutor._id,
-        name: `${tutor.user.firstName} ${tutor.user.lastName}`,
-        shift: tutor.shifts?.[0]
-          ? `${tutor.shifts[0].startTime} - ${tutor.shifts[0].endTime}`
-          : "No shift",
-      }));
+      const averageRevenuePerStudent = totalStudents > 0 ? totalRevenue / totalStudents : 0;
+      const averageProfitPerSession = selectedFinancials.sessionsCount > 0 ? selectedFinancials.profit / selectedFinancials.sessionsCount : 0;
+      const averageRevenuePerSession = selectedFinancials.sessionsCount > 0 ? selectedFinancials.revenue / selectedFinancials.sessionsCount : 0;
+      
+      const profitMargin = selectedFinancials.revenue > 0 ? (selectedFinancials.profit / selectedFinancials.revenue * 100) : 0;
+      const totalProfitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
   
-      // Get recent payments
+      const sessionsPerTutor = activeTutors > 0 ? selectedFinancials.sessionsCount / activeTutors : 0;
+      const revenuePerTutor = activeTutors > 0 ? selectedFinancials.revenue / activeTutors : 0;
+  
+      // ======================
+      // TOP PERFORMERS
+      // ======================
+  
+      const topTutorsByRevenue = await Payment.aggregate([
+        {
+          $match: {
+            type: "Payment",
+            status: "completed",
+            createdAt: { $gte: selectedRange.start, $lte: selectedRange.end }
+          }
+        },
+        {
+          $lookup: {
+            from: "classsessions",
+            localField: "classSessionId",
+            foreignField: "_id",
+            as: "session"
+          }
+        },
+        { $unwind: "$session" },
+        {
+          $lookup: {
+            from: "classes",
+            localField: "session.class",
+            foreignField: "_id",
+            as: "class"
+          }
+        },
+        { $unwind: "$class" },
+        {
+          $lookup: {
+            from: "tutorprofiles",
+            localField: "class.tutor",
+            foreignField: "_id",
+            as: "tutor"
+          }
+        },
+        { $unwind: "$tutor" },
+        {
+          $lookup: {
+            from: "users",
+            localField: "tutor.user",
+            foreignField: "_id",
+            as: "tutorUser"
+          }
+        },
+        { $unwind: "$tutorUser" },
+        {
+          $group: {
+            _id: "$tutor._id",
+            tutorName: { $first: { $concat: ["$tutorUser.firstName", " ", "$tutorUser.lastName"] } },
+            totalRevenue: { $sum: "$amount" },
+            sessionCount: { $sum: 1 },
+            subjects: { $addToSet: "$class.subject" }
+          }
+        },
+        { $sort: { totalRevenue: -1 } },
+        { $limit: 5 }
+      ]);
+  
+      // Recent activities
       const recentPayments = await Payment.find()
         .sort({ createdAt: -1 })
-        .limit(5)
-        .populate("user", "firstName lastName");
+        .limit(8)
+        .populate("user", "firstName lastName")
+        .populate({
+          path: "classId",
+          select: "subject"
+        });
   
-      const formattedPayments = recentPayments.map((payment) => ({
+      const formattedPayments = recentPayments.map(payment => ({
+        id: payment._id,
         amount: payment.amount,
+        type: payment.type,
+        status: payment.status,
         date: payment.createdAt.toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
           year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit"
         }),
-        description: payment.reason || "Class Payment",
-        status: payment.status,
+        user: payment.user ? `${payment.user.firstName} ${payment.user.lastName}` : 'Unknown',
+        subject: payment.classId?.subject || 'N/A',
+        description: payment.reason || `${payment.type} - ${payment.classId?.subject || 'Class'}`
       }));
   
-      // Return the formatted response
-      res.json({
+      // ======================
+      // RESPONSE STRUCTURE
+      // ======================
+  
+      const response = {
         status: "success",
         data: {
-          stats: {
-            newStudents: newStudents,
-            totalStudents: uniqueStudents.size,
-            activeClasses,
-            todayRevenue,
-            revenueChange: parseFloat(revenueChange),
+          mainKPIs: {
             totalRevenue,
+            totalProfit,
             totalExpenses,
-            grossProfit: totalGrossProfit,
-            todayGrossProfit,
-            tutorPayouts: totalTutorPayouts,
-            classCosts: totalClassCosts
+            totalProfitMargin: totalProfitMargin.toFixed(2),
+            totalStudents,
+            activeStudents: totalActiveStudents,
+            totalTutors,
+            activeTutors,
+            totalClasses,
+            activeClasses,
+            totalRooms,
+            activeRooms,
+            totalSessions: await ClassSession.countDocuments(),
+            newStudents,
+            newTutors,
+            newClasses
           },
-          weeklyRevenue: formattedRevenueData,
-          weeklyGrossProfit: formattedProfitData,
-          activeTutors: formattedTutors,
-          payments: formattedPayments,
-        },
-      });
+  
+          timeBasedMetrics: {
+            daily: {
+              revenue: dailyFinancials.revenue,
+              profit: dailyFinancials.profit,
+              expenses: dailyFinancials.totalExpenses,
+              sessions: dailyFinancials.sessionsCount,
+              profitMargin: dailyFinancials.revenue > 0 ? (dailyFinancials.profit / dailyFinancials.revenue * 100).toFixed(2) : 0,
+              organizingCosts: dailyFinancials.organizingCosts,
+              tutorPayouts: dailyFinancials.tutorPayouts
+            },
+            weekly: {
+              revenue: weeklyFinancials.revenue,
+              profit: weeklyFinancials.profit,
+              expenses: weeklyFinancials.totalExpenses,
+              sessions: weeklyFinancials.sessionsCount,
+              profitMargin: weeklyFinancials.revenue > 0 ? (weeklyFinancials.profit / weeklyFinancials.revenue * 100).toFixed(2) : 0,
+              organizingCosts: weeklyFinancials.organizingCosts,
+              tutorPayouts: weeklyFinancials.tutorPayouts
+            },
+            monthly: {
+              revenue: monthlyFinancials.revenue,
+              profit: monthlyFinancials.profit,
+              expenses: monthlyFinancials.totalExpenses,
+              sessions: monthlyFinancials.sessionsCount,
+              profitMargin: monthlyFinancials.revenue > 0 ? (monthlyFinancials.profit / monthlyFinancials.revenue * 100).toFixed(2) : 0,
+              organizingCosts: monthlyFinancials.organizingCosts,
+              tutorPayouts: monthlyFinancials.tutorPayouts
+            },
+            yearly: {
+              revenue: yearlyFinancials.revenue,
+              profit: yearlyFinancials.profit,
+              expenses: yearlyFinancials.totalExpenses,
+              sessions: yearlyFinancials.sessionsCount,
+              profitMargin: yearlyFinancials.revenue > 0 ? (yearlyFinancials.profit / yearlyFinancials.revenue * 100).toFixed(2) : 0,
+              organizingCosts: yearlyFinancials.organizingCosts,
+              tutorPayouts: yearlyFinancials.tutorPayouts
+            }
+          },
+  
+          selectedPeriod: {
+            timeframe,
+            revenue: selectedFinancials.revenue,
+            profit: selectedFinancials.profit,
+            expenses: selectedFinancials.totalExpenses,
+            tutorPayouts: selectedFinancials.tutorPayouts,
+            organizingCosts: selectedFinancials.organizingCosts,
+            sessions: selectedFinancials.sessionsCount,
+            profitMargin: profitMargin.toFixed(2),
+            newStudents,
+            revenueGrowth: revenueGrowth.toFixed(2),
+            profitGrowth: profitGrowth.toFixed(2)
+          },
+  
+          advancedMetrics: {
+            averageRevenuePerStudent: averageRevenuePerStudent.toFixed(2),
+            averageProfitPerSession: averageProfitPerSession.toFixed(2),
+            averageRevenuePerSession: averageRevenuePerSession.toFixed(2),
+            sessionsPerTutor: sessionsPerTutor.toFixed(2),
+            revenuePerTutor: revenuePerTutor.toFixed(2),
+            classCompletionRate: totalClasses > 0 ? ((completedClasses / totalClasses) * 100).toFixed(2) : 0,
+            studentRetentionRate: totalStudents > 0 ? ((totalActiveStudents / totalStudents) * 100).toFixed(2) : 0,
+            averageClassSize: totalClasses > 0 ? (totalStudents / totalClasses).toFixed(1) : 0,
+            tutorUtilizationRate: totalTutors > 0 ? ((activeTutors / totalTutors) * 100).toFixed(2) : 0,
+            roomUtilizationRate: totalRooms > 0 ? ((activeRooms / totalRooms) * 100).toFixed(2) : 0,
+            studentsPerTutor: activeTutors > 0 ? (totalActiveStudents / activeTutors).toFixed(1) : 0,
+            classesPerRoom: totalRooms > 0 ? (activeClasses / totalRooms).toFixed(1) : 0,
+            activeStudentRate: totalStudents > 0 ? ((totalActiveStudents / totalStudents) * 100).toFixed(2) : 0,
+            activeClassRate: totalClasses > 0 ? ((activeClasses / totalClasses) * 100).toFixed(2) : 0
+          },
+  
+          charts: {
+            timeSeries: timeSeriesData.map(point => ({
+              period: point.displayName,
+              date: point.date,
+              revenue: point.revenue,
+              profit: point.profit,
+              expenses: point.expenses,
+              tutorPayouts: point.tutorPayouts,
+              organizingCosts: point.organizingCosts,
+              sessions: point.sessions,
+              profitMargin: point.revenue > 0 ? ((point.profit / point.revenue) * 100).toFixed(1) : 0
+            })),
+            
+            expenseBreakdown: [
+              {
+                name: "Tutor Payouts",
+                value: selectedFinancials.tutorPayouts,
+                percentage: selectedFinancials.totalExpenses > 0 ? ((selectedFinancials.tutorPayouts / selectedFinancials.totalExpenses) * 100).toFixed(1) : 0,
+                color: "#8B5CF6"
+              },
+              {
+                name: "Organizing Costs",
+                value: selectedFinancials.organizingCosts,
+                percentage: selectedFinancials.totalExpenses > 0 ? ((selectedFinancials.organizingCosts / selectedFinancials.totalExpenses) * 100).toFixed(1) : 0,
+                color: "#F59E0B"
+              }
+            ],
+  
+            revenueVsProfit: timeSeriesData.map(point => ({
+              period: point.displayName,
+              revenue: point.revenue,
+              profit: point.profit,
+              profitMargin: point.revenue > 0 ? ((point.profit / point.revenue) * 100) : 0
+            }))
+          },
+  
+          topPerformers: {
+            tutorsByRevenue: topTutorsByRevenue.map(tutor => ({
+              id: tutor._id,
+              name: tutor.tutorName,
+              revenue: tutor.totalRevenue,
+              sessions: tutor.sessionCount,
+              subjects: tutor.subjects,
+              averagePerSession: tutor.sessionCount > 0 ? (tutor.totalRevenue / tutor.sessionCount).toFixed(2) : 0
+            }))
+          },
+  
+          recentActivities: {
+            payments: formattedPayments,
+            summary: {
+              totalTransactions: formattedPayments.length,
+              completedPayments: formattedPayments.filter(p => p.status === 'completed').length,
+              pendingPayments: formattedPayments.filter(p => p.status === 'pending').length
+            }
+          },
+  
+          systemHealth: {
+            activeClassesRatio: totalClasses > 0 ? ((activeClasses / totalClasses) * 100).toFixed(1) : 0,
+            tutorUtilization: activeTutors > 0 ? ((selectedFinancials.sessionsCount / (activeTutors * 30)) * 100).toFixed(1) : 0,
+            revenueHealth: revenueGrowth >= 0 ? 'positive' : 'negative',
+            profitHealth: profitMargin >= 20 ? 'excellent' : profitMargin >= 10 ? 'good' : profitMargin >= 0 ? 'fair' : 'poor'
+          }
+        }
+      };
+  
+      res.json(response);
+  
     } catch (error) {
-      console.error("Dashboard Stats Error:", error);
+      console.error("Enhanced Dashboard Stats Error:", error);
       res.status(500).json({
         status: "failed",
         message: "Error fetching dashboard statistics",
-        error: error.message,
+        error: error.message
       });
     }
   },
-
-
-
 };
 
-
-
-
+// Updated getClassSessions function
 const getClassSessions = async (req, res) => {
   try {
     const { classId } = req.params;
@@ -1556,6 +2059,10 @@ const getClassSessions = async (req, res) => {
       startTime: session.startTime,
       endTime: session.endTime,
       status: session.status,
+      sessionType: session.sessionType,
+      organizingCost: session.organizingCost,
+      teacherPayout: session.teacherPayout,
+      totalStudentRevenue: session.totalStudentRevenue,
       room: session.room
         ? {
           _id: session.room._id,
@@ -1607,7 +2114,7 @@ const getClassSessions = async (req, res) => {
   }
 };
 
-// Add sessions summary statistics (optional but useful)
+// Updated getClassSessionsStats function
 const getClassSessionsStats = async (req, res) => {
   try {
     const { classId } = req.params;
@@ -1620,6 +2127,18 @@ const getClassSessionsStats = async (req, res) => {
       scheduled: sessions.filter((s) => s.status === "scheduled").length,
       cancelled: sessions.filter((s) => s.status === "cancelled").length,
       rescheduled: sessions.filter((s) => s.status === "rescheduled").length,
+
+      // Financial stats
+      totalOrganizingCosts: sessions.reduce((sum, s) => sum + (s.organizingCost || 0), 0),
+      totalTeacherPayouts: sessions.reduce((sum, s) => sum + (s.teacherPayout || 0), 0),
+      totalStudentRevenue: sessions.reduce((sum, s) => sum + (s.totalStudentRevenue || 0), 0),
+
+      // Session type breakdown
+      sessionTypes: {
+        online: sessions.filter((s) => s.sessionType === "online").length,
+        "our-space": sessions.filter((s) => s.sessionType === "our-space").length,
+        "student-place": sessions.filter((s) => s.sessionType === "student-place").length,
+      },
 
       // Attendance stats
       attendance: {

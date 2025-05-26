@@ -1,25 +1,65 @@
-const ClassController = require("../../controllers/admin/class.Controller");
 const express = require("express");
+const { authenticateJWT, isAdmin } = require("../../middleware/auth");
+const ClassController = require("../../controllers/admin/class.Controller");
+const CategoryController = require("../../controllers/admin/Category.Controller");
+
 const router = express.Router();
-const { isAdmin, authenticateJWT } = require("../../middleware/auth");
-router.post("/", [authenticateJWT, isAdmin], ClassController.createClass);
+
+// ----- Category Routes -----
+router.post(
+  "/create",
+  [authenticateJWT, isAdmin],
+  CategoryController.createCategory
+);
+router.get(
+  "/getAll",
+  [authenticateJWT, isAdmin],
+  CategoryController.getAllCategories
+);
+router.get(
+  "/getIndividual/:id",
+  [authenticateJWT, isAdmin],
+  CategoryController.getCategory
+);
+router.put(
+  "/updateCategory/:id",
+  [authenticateJWT, isAdmin],
+  CategoryController.updateCategory
+);
+router.delete(
+  "/delete/:id",
+  [authenticateJWT, isAdmin],
+  CategoryController.deleteCategory
+);
+
+// ----- Class Routes -----
+router.post(
+  "/",
+  [authenticateJWT, isAdmin],
+  ClassController.createClass
+);
+router.get(
+  "/",
+  [authenticateJWT, isAdmin],
+  ClassController.getClasses
+);
+router.patch(
+  "/:classId/complete",
+  [authenticateJWT, isAdmin],
+  ClassController.markClassAsCompleted
+);
+
+// ----- Session Routes -----
 router.get(
   "/sessions",
   [authenticateJWT, isAdmin],
   ClassController.getAllSessions
 );
-router.put(
-  "/assign-room",
+router.post(
+  "/session",
   [authenticateJWT, isAdmin],
-  ClassController.assignRoomToSession
+  ClassController.addSession
 );
-router.put(
-  "/unassign-room",
-  [authenticateJWT, isAdmin],
-  ClassController.unassignRoomFromSession
-);
-router.get("/", [authenticateJWT, isAdmin], ClassController.getClasses);
-router.post("/session", [authenticateJWT, isAdmin], ClassController.addSession);
 router.post(
   "/session-remove",
   [authenticateJWT, isAdmin],
@@ -40,21 +80,30 @@ router.get(
   [authenticateJWT, isAdmin],
   ClassController.getDashboardStats
 );
-
 router.post(
   "/cancel-session",
-  [authenticateJWT,isAdmin],
+  [authenticateJWT, isAdmin],
   ClassController.cancelSession
 );
 router.post(
   "/reschedule-session",
-  [authenticateJWT,isAdmin],
+  [authenticateJWT, isAdmin],
   ClassController.rescheduleSession
 );
-router.patch("/:classId/complete",[authenticateJWT,isAdmin], ClassController.markClassAsCompleted);
 router.patch(
   "/sessions/:sessionId/complete",
   [authenticateJWT, isAdmin],
   ClassController.markSessionAsCompleted
 );
+router.put(
+  "/assign-room",
+  [authenticateJWT, isAdmin],
+  ClassController.assignRoomToSession
+);
+router.put(
+  "/unassign-room",
+  [authenticateJWT, isAdmin],
+  ClassController.unassignRoomFromSession
+);
+
 module.exports = router;

@@ -9,9 +9,10 @@ const callNoteSchema = new Schema({
 
 const leadSchema = new Schema({
   firstName:  { type: String, required: true },
-  lastName:   { type: String, required: true },
+  lastName:   { type: String},
   phone:      { type: String, required: true },
   address:    { type: String, required: true },
+  source:     {type:String , required :true},
   email:      { type: String, required: true, unique: true },
   leadStatus: { type: String, enum: ["hot","warm","cold","converted","lost"], default: "warm" },
   callNotes:  [callNoteSchema]

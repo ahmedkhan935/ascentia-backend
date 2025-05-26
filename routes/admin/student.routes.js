@@ -29,6 +29,8 @@ router.get(
   [authenticateJWT, isAdmin],
   studentController.getLeads
 );
+router.put('/deactivate-bulk', [authenticateJWT,isAdmin], studentController.deactivateBulk);
+
 
 // Create a new lead - needs to be before "/:id" route
 router.post(

@@ -120,16 +120,9 @@ const RoomAvailabilityController = {
                     const bookingDateStr = bookingDate.toDateString();
                     const checkDateStr = checkDate.toDateString();
                     
-                    // First check if it's the same date
                     if (bookingDateStr !== checkDateStr) {
                         return false; // Different date, no overlap
                     }
-                    
-                    // Check for time overlap
-                    // Overlap happens when:
-                    // 1. Booking starts during requested time (booking.startTime >= startTime && booking.startTime < endTime)
-                    // 2. Booking ends during requested time (booking.endTime > startTime && booking.endTime <= endTime)
-                    // 3. Booking completely contains requested time (booking.startTime <= startTime && booking.endTime >= endTime)
                     return (
                         (booking.startTime < endTime && booking.startTime >= startTime) ||
                         (booking.endTime > startTime && booking.endTime <= endTime) ||

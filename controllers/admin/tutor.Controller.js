@@ -286,6 +286,79 @@ const tutorController = {
     }
   },
 
+  getAllTutors: async (req, res) => {
+    try {
+      const search = req.query.search || "";
+      const status = req.query.status;
+  
+      // Build base query
+      let query = {};
+  
+      // Text‐search across firstName, lastName, email
+      if (search) {
+        const userQuery = {
+          $or: [
+            { firstName: { $regex: search, $options: "i" } },
+            { lastName:  { $regex: search, $options: "i" } },
+            { email:     { $regex: search, $options: "i" } },
+          ],
+        };
+        const users = await User.find(userQuery).select("_id");
+        query.user = { $in: users.map(u => u._id) };
+      }
+  
+      // Filter by status if provided
+      if (status) {
+        query.status = status;
+      }
+  
+      // Fetch all matching tutor profiles
+      const tutors = await TutorProfile.find(query)
+        .populate("user", "firstName lastName email phone")
+        .sort({ createdAt: -1 });
+  
+      // Transform for frontend
+      const transformedTutors = tutors.map(tutor => {
+        const totalWorkHours = (tutor.shifts || []).reduce((sum, shift) => {
+          const [sh, sm] = shift.startTime.split(":").map(Number);
+          const [eh, em] = shift.endTime.split(":").map(Number);
+          return sum + ((eh + em/60) - (sh + sm/60));
+        }, 0);
+  
+        return {
+          id: tutor._id,
+          name: `${tutor.user.firstName} ${tutor.user.lastName}`,
+          email: tutor.user.email,
+          phone: tutor.user.phone,
+          initials:
+            tutor.user.firstName.charAt(0) +
+            (tutor.user.lastName ? tutor.user.lastName.charAt(0) : ""),
+          workHours: `${totalWorkHours.toFixed(2)} hours`,
+          status: tutor.status,
+          blogs: `${tutor.publishedBlogs || 0} blogs`,
+          credit: tutor.creditBalance || 0,
+          education: tutor.education,
+          subjects: tutor.subjects,
+          address: tutor.location?.address || "",
+          latitude: tutor.location?.coordinates?.latitude ?? null,
+          longitude: tutor.location?.coordinates?.longitude ?? null,
+        };
+      });
+  
+      await createLog("READ", "TUTOR", null, req.user, req);
+  
+      // Return the full list
+      res.json({ tutors: transformedTutors });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({
+        message: "Error fetching tutors",
+        error: error.message,
+      });
+    }
+  },
+  
+
   getById: async (req, res) => {
     try {
       const tutor = await TutorProfile.findById(req.params.id).populate(
@@ -980,16 +1053,26 @@ const tutorController = {
     }
   },
   getPayments: async (req, res) => {
-    try{
-      const payments = await Payment.find().populate('user').sort({createdAt:-1});
-      res.json({status:"success",payments});
-
-
-    }
-    catch(error){
-      res.status(500).json({status:"failed",message:"Error fetching payments",error:error.message});
+    try {
+      const payments = await Payment.find()
+        .populate('user')               // replaces user ID with full user document
+        .populate('classSessionId')     // replaces classSessionId with full ClassSession document
+        .populate('classId')            // replaces classId with full Class document
+        .sort({ createdAt: -1 });
+  
+      res.json({
+        status: "success",
+        payments
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: "failed",
+        message: "Error fetching payments",
+        error: error.message
+      });
     }
   },
+  
   updatePaymentStatus: async (req, res) => {
     const { id }      = req.params;
     const { status }  = req.body;
@@ -1036,6 +1119,68 @@ const tutorController = {
         .json({ status: "failed", message: "Internal Server Error", error: err.message });
     }
   },
+
+  rejectPayment: async (req, res) => {
+    const { id } = req.params;
+    const { reason } = req.body; 
+    const userId = req.user && req.user._id;
+
+    try {
+      // 1) Find & update status to "failed"
+      const updated = await Payment.findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            status: "failed",
+            rejectionReason: reason || "Rejected by admin",
+            updatedAt: new Date()
+          }
+        },
+        { new: true }
+      )
+      .populate("user")
+      .populate("classSessionId")
+      .populate("classId");
+
+      if (!updated) {
+        return res
+          .status(404)
+          .json({ status: "failed", message: "Payment not found." });
+      }
+
+      // 2) Log an activity for the rejection
+      const classInfo = updated.classId;
+      const sessionInfo = updated.classSessionId;
+      const activity = new Activity({
+        name: "Payment Rejected",
+        description: `Payment of $${updated.amount} for "${
+          classInfo ? classInfo.subject : "a class"
+        }" on ${sessionInfo?.date.toISOString().split("T")[0]} has been rejected.${
+          reason ? " Reason: " + reason : ""
+        }`,
+        class: updated.classId,
+        classSession: updated.classSessionId,
+        user: userId,
+        payment: updated._id
+      });
+      await activity.save();
+
+      // 3) Return the updated payment
+      return res.json({
+        status: "success",
+        message: "Payment has been rejected.",
+        payment: updated
+      });
+    } catch (err) {
+      console.error("rejectPayment Error:", err);
+      return res.status(500).json({
+        status: "failed",
+        message: "Error rejecting payment",
+        error: err.message
+      });
+    }
+  },
+
   
   updateTutor: async (req, res) => {  
     try {
@@ -1241,6 +1386,15 @@ getTutorSessions:async (req, res) => {
       message: "Server error",
       error:   err.message
     });
+  }
+},
+checkEmailExists: async (req, res) => {
+  try {
+    const { email } = req.body;
+    const existingUser = await User.findOne({ email });
+    res.json({ status: "success", exists: !!existingUser });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 },
 

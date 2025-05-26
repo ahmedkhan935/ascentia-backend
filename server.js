@@ -12,7 +12,7 @@ const MODE = process.env.MODE || "local";
 
 // Middleware
 app.use(cors());
-app.use(express.json()); // Uncommented this line as it seems to be commented out
+app.use(express.json());
 app.use("/api", router);
 app.use("/api2", router2);
 app.get("/", (req, res) => {

@@ -7,6 +7,7 @@ const upload = require('../../middleware/upload');
 
 router.post('/', [authenticateJWT, isAdmin],upload.single('photo'), tutorController.create);
 router.get('/', [authenticateJWT, isAdmin], tutorController.getAll);
+router.get('/getAll', [authenticateJWT, isAdmin], tutorController.getAllTutors);
 router.get('/bonus', [authenticateJWT, isAdmin], tutorController.getBonuses);
 router.get("/activities", [authenticateJWT, isAdmin], tutorController.getActivities);
 router.get("/payments/admin", [authenticateJWT, isAdmin], tutorController.getPayments);
@@ -14,6 +15,7 @@ router.get('/requests/pending', [authenticateJWT, isAdmin], tutorController.getP
 router.get('/requests/all', [authenticateJWT, isAdmin], tutorController.getAllRequests);
 router.get('/:id', [authenticateJWT, isAdmin], tutorController.getById);
 router.put('/:id', [authenticateJWT, isAdmin], tutorController.update);
+router.post('/check-email', tutorController.checkEmailExists);
 router.patch(
   "/:id/status",
   [authenticateJWT, isAdmin],
@@ -40,6 +42,7 @@ router.get(
     tutorController.getTutorSessions
   );
 router.put('/payment/:id',[authenticateJWT,isAdmin], tutorController.updatePaymentStatus);
+router.put('/rejectPayment/:id',[authenticateJWT,isAdmin],tutorController.rejectPayment);
 
 
 

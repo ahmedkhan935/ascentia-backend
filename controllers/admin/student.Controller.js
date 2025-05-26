@@ -1,4 +1,4 @@
-const mongoose=require('mongoose')
+const mongoose = require('mongoose')
 const User = require('../../models/User');
 const Lead = require("../../models/Lead");
 
@@ -10,28 +10,26 @@ const bcrypt = require('bcryptjs');
 const Payment = require('../../models/Payment');
 const Activity = require("../../models/Activity");
 const studentController = {
-  create : async (req, res) => {
+  create: async (req, res) => {
     try {
-      // Support both JSON body or form-data under `student`
       const student = req.body.student
         ? JSON.parse(req.body.student)
         : req.body;
-  
-      // 1) Required firstName
       if (!student.firstName || !student.firstName.trim()) {
         return res
           .status(400)
           .json({ status: "Error", message: "First name is required" });
       }
-  
+
       // Build the student data
       const newStudentData = {
         role: "student",
         firstName: student.firstName,
         lastName: student.lastName || "",
+        school: student.school || "",
         selfGuardian: student.selfGuardian === true || student.selfGuardian === "true",
       };
-      
+
       if (student.email && typeof student.email === "string" && student.email.trim() !== "") {
         const email = student.email.trim();
         const existingUser = await User.findOne({ email });
@@ -40,82 +38,78 @@ const studentController = {
             .status(400)
             .json({ status: "Error", message: "Email already exists" });
         }
-        
+
         newStudentData.email = email;
       }
       else if (student.email === "") {
         newStudentData.email = "";
       }
       // In all other cases, omit the email field completely
-      
+
       if (student.phone) newStudentData.phone = student.phone;
       if (student.prefferedPayment) newStudentData.paymentSchedule = student.prefferedPayment;
-      if (student.password) newStudentData.password = student.password;
       if (student.dateOfBirth) newStudentData.dateOfBirth = student.dateOfBirth;
-  
+
       const result = await mongoose.connection.db.collection('users').insertOne(newStudentData);
-      
+
       const newStudent = await User.findById(result.insertedId);
-  
-      if (!newStudentData.selfGuardian && (student.parent || 
+
+      if (!newStudentData.selfGuardian && (student.parent ||
         (student.parentFirstName && student.parentPhone))) {
-        
-      // Support both nested parent object and flat parent fields
-      const p = student.parent || {
-        firstName: student.parentFirstName,
-        lastName: student.parentLastName || "",
-        email: student.parentEmail,
-        phone: student.parentPhone,
-        password: student.parentPassword
-      };
-      
-      let parentUser;
-      let parentEmail = null;
 
-      // Process parent email - only add if it's valid
-      if (p.email && typeof p.email === "string" && p.email.trim() !== "") {
-        parentEmail = p.email.trim();
-        // try find existing
-        parentUser = await User.findOne({ email: parentEmail });
-      }
-
-      if (!parentUser) {
-        // otherwise create new parent
-        const parentData = {
-          role: "parent",
-          firstName: p.firstName,
-          lastName: p.lastName || "", // ← never undefined
+        // Support both nested parent object and flat parent fields
+        const p = student.parent || {
+          firstName: student.parentFirstName,
+          lastName: student.parentLastName || "",
+          email: student.parentEmail,
+          phone: student.parentPhone,
         };
-        
-        // Only add email if it actually exists
-        if (parentEmail) parentData.email = parentEmail;
-        if (p.phone) parentData.phone = p.phone;
-        if (p.password) parentData.password = p.password;
 
-        parentUser = new User(parentData);
-        await parentUser.save();
-      }
+        let parentUser;
+        let parentEmail = null;
 
-      // link student into family
-      if (parentUser) {
-        let family = await Family.findOne({ parentUser: parentUser._id });
-        if (!family) {
-          family = new Family({
-            parentUser: parentUser._id,
-            students: [],
-          });
+        // Process parent email - only add if it's valid
+        if (p.email && typeof p.email === "string" && p.email.trim() !== "") {
+          parentEmail = p.email.trim();
+          // try find existing
+          parentUser = await User.findOne({ email: parentEmail });
         }
-        family.students.push(newStudent._id);
-        await family.save();
+
+        if (!parentUser) {
+          // otherwise create new parent
+          const parentData = {
+            role: "parent",
+            firstName: p.firstName,
+            lastName: p.lastName || "", // ← never undefined
+          };
+
+          // Only add email if it actually exists
+          if (parentEmail) parentData.email = parentEmail;
+          if (p.phone) parentData.phone = p.phone;
+          parentUser = new User(parentData);
+          await parentUser.save();
+        }
+
+        // link student into family
+        if (parentUser) {
+          let family = await Family.findOne({ parentUser: parentUser._id });
+          if (!family) {
+            family = new Family({
+              parentUser: parentUser._id,
+              students: [],
+            });
+          }
+          family.students.push(newStudent._id);
+          await family.save();
+        }
       }
-    }
       // 6) Log activity & create system log
       await new Activity({
         name: "New Student",
         description: `Added student ${newStudent.firstName} ${newStudent.lastName}`,
         studentId: newStudent._id,
       }).save();
-  
+
       await createLog(
         "CREATE",
         "USER",
@@ -124,7 +118,7 @@ const studentController = {
         req,
         { role: "student" }
       );
-  
+
       // 7) Respond success
       res.status(200).json({
         status: "success",
@@ -133,9 +127,9 @@ const studentController = {
           _id: newStudent._id,
           firstName: newStudent.firstName,
           lastName: newStudent.lastName,
-          // Only include real emails in the response
-          email: newStudent.email && !newStudent.email.includes('@placeholder.internal') 
-            ? newStudent.email 
+          school: newStudent.school,
+          email: newStudent.email && !newStudent.email.includes('@placeholder.internal')
+            ? newStudent.email
             : null,
         },
       });
@@ -148,348 +142,562 @@ const studentController = {
       });
     }
   },
-  
-
-    getAll: async (req, res) => {
-        try {
-            const students = await User.find({ role: 'student' })
-                .select('-password');
-            
-            await createLog('READ', 'USER', null, req.user, req, { role: 'student' });
-
-            res.json(students);
-        } catch (error) {
-            res.status(500).json({ message: 'Error fetching students', error: error.message });
-        }
-    },
-    getAllFormatted: async (req, res) => {
-        try
-        {
-            const Students = await User.find({ role: 'student' }).select('-password');
-            let data = [];
-            //append the class object for each class for each student
-            for (let i = 0; i < Students.length; i++) {
-                let student = Students[i];  
-                
-                let classes = await Class.find({ 'students.id': student._id }).select('-students');
-                const family = await Family.findOne({ students: { $in: [student._id] } }).select('-_id');   
-                const Payments = await Payment.find({
-                    $or: [
-                        { user: student._id },
-                        { user: family?.parentUser }
-                    ]
-                }).select('-student');
-                const subjects = [];
-                if(classes.length>0)
-                {
-                    classes.map((cls)=>{
-                        if(!subjects.includes(cls.subject))
-                        {
-                            subjects.push(cls.subject);
-                        }
-                    }   
-                    );
-                }
-                data.push({
-                    id: student._id,
-                    name: student.firstName + ' ' + student.lastName,
-                    email: student.email,
-                    phone: student.phone,               // added phone
-                    dateOfBirth: student.dateOfBirth,
-                    initials: student.firstName.charAt(0) + student.lastName.charAt(0),
-                    classes: classes.length + ' classes',
-                    subjects: subjects,
-                    subscription: student.paymentSchedule,
-                    paymentHistory:Payments,
-                    isActive: student.isActive,
 
 
-                })
+  getAll: async (req, res) => {
+    try {
+      const students = await User.find({ role: 'student' })
+        .select('-password');
+
+      await createLog('READ', 'USER', null, req.user, req, { role: 'student' });
+
+      res.json(students);
+    } catch (error) {
+      res.status(500).json({ message: 'Error fetching students', error: error.message });
+    }
+  },
+  getAllFormatted: async (req, res) => {
+    try {
+      const Students = await User.find({ role: 'student' }).select('-password');
+      let data = [];
+      //append the class object for each class for each student
+      for (let i = 0; i < Students.length; i++) {
+        let student = Students[i];
+
+        let classes = await Class.find({ 'students.id': student._id }).select('-students');
+        const family = await Family.findOne({ students: { $in: [student._id] } }).select('-_id');
+        const Payments = await Payment.find({
+          $or: [
+            { user: student._id },
+            { user: family?.parentUser }
+          ]
+        }).select('-student');
+        const subjects = [];
+        if (classes.length > 0) {
+          classes.map((cls) => {
+            if (!subjects.includes(cls.subject)) {
+              subjects.push(cls.subject);
             }
-            res.status(200).json({
-                status: 'success',
-                data: data
-            });
-        }
-        catch(error)
-        {
-            res.status(500).json({ message: 'Error fetching students', error: error.message,status:"Error" });
-
-        }
-    },
-
-    getById: async (req, res) => {
-        try {
-            const student = await User.findOne({ 
-                _id: req.params.id,
-                role: 'student'
-            }).select('-password');
-
-            if (!student) {
-                return res.status(404).json({ message: 'Student not found' });
-            }
-
-            await createLog('READ', 'USER', student._id, req.user, req);
-
-            res.json(student);
-        } catch (error) {
-            res.status(500).json({ message: 'Error fetching student', error: error.message });
-        }
-    },
-
-    update: async (req, res) => {
-        try {
-       
-            const { firstName, lastName, email,password,isActive } = req.body;
-            let updateData={};
-            
-            if(password) {
-                const salt = await bcrypt.genSalt(10);
-                const hashedPassword = await bcrypt.hash(password, salt);
-               updateData.password = hashedPassword;
-            }
-            if(isActive===true||isActive===false) {
-                updateData.isActive = isActive;
-            }
-            if(firstName) {
-                updateData.firstName = firstName;
-            }
-            if(lastName) {
-                updateData.lastName = lastName;
-            }
-            if(email) {
-                updateData.email = email;
-            }
-
-         
-
-
-            const student = await User.findOneAndUpdate(
-                { _id: req.params.id, role: 'student' },
-                updateData,
-                { new: true }
-            ).select('-password');
-
-            if (!student) {
-                return res.status(404).json({ message: 'Student not found' });
-            }
-
-            await createLog('UPDATE', 'USER', student._id, req.user, req);
-
-            res.json({
-                message: 'Student updated successfully',
-                student
-            });
-        } catch (error) {
-            res.status(500).json({ message: 'Error updating student', error: error.message });
-        }
-    },
-
-    delete: async (req, res) => {
-        try {
-            const student = await User.findOneAndDelete({
-                _id: req.params.id,
-                role: 'student'
-            });
-
-            if (!student) {
-                return res.status(404).json({ message: 'Student not found' });
-            }
-
-            await createLog('DELETE', 'USER', student._id, req.user, req);
-
-            res.json({ message: 'Student deleted successfully' });
-        } catch (error) {
-            res.status(500).json({ message: 'Error deleting student', error: error.message });
-        }
-    },
-    updateStudent: async (req, res) => {
-        try {
-          const studentId = req.params.id;
-          const student = await User.findById(studentId);
-          if (!student || student.role !== 'student') {
-            return res.status(404).json({ status: 'Error', message: 'Student not found' });
           }
-              const payload = req.body.student
-            ? JSON.parse(req.body.student)
-            : req.body;
-              if (payload.email && payload.email !== student.email) {
-            const conflict = await User.findOne({ email: payload.email });
-            if (conflict) {
-              return res
-                .status(400)
-                .json({ status: 'Error', message: 'Email already in use' });
-            }
-            student.email = payload.email;
-          }
-    
-          if (payload.password) {
-            const salt = await bcrypt.genSalt(10);
-            student.password = await bcrypt.hash(payload.password, salt);
-          }
-    
-          if (payload.firstName)    student.firstName      = payload.firstName;
-          if (payload.lastName)     student.lastName       = payload.lastName;
-          if (payload.phone)        student.phone          = payload.phone;
-          if (payload.dateOfBirth)  student.dateOfBirth    = payload.dateOfBirth;
-          if (payload.preferredPayment) 
-                                    student.paymentSchedule = payload.preferredPayment;
-    
-          await student.save();
-          const activity = new Activity({
-            name:        'Student Updated',
-            description: `Student ${student.firstName} ${student.lastName} updated`,
-            studentId:   student._id
-          });
-          await activity.save();
-          
-          await createLog('UPDATE', 'USER', student._id, req.user, req, { role: 'student' });
-          res.status(200).json({
-            status:  'success',
-            message: 'Student updated successfully',
-            student: {
-              _id:        student._id,
-              email:      student.email,
-              firstName:  student.firstName,
-              lastName:   student.lastName,
-              phone:      student.phone,
-              dateOfBirth:student.dateOfBirth,
-              paymentSchedule: student.paymentSchedule
-            }
-          });
-        } catch (error) {
-          console.error('Error updating student:', error);
-          res
-            .status(500)
-            .json({ status: 'Error', message: 'Error updating student', error: error.message });
-        }
-      },
-      createLead: async (req, res, next) => {
-        try {
-          const { firstName, lastName, phone, address, email, callNotes = [], leadStatus = "warm" } = req.body;
-          
-          if (!firstName || !lastName || !phone || !address || !email) {
-            return res.status(400).json({ 
-              status: 'error', 
-              message: "firstName, lastName, phone, address and email are required" 
-            });
-          }
-          
-          if (!["hot","warm","cold"].includes(leadStatus)) {
-            return res.status(400).json({ 
-              status: 'error', 
-              message: "leadStatus must be 'hot', 'warm', or 'cold'" 
-            });
-          }
-          
-          const lead = await Lead.create({ firstName, lastName, phone, address, email, leadStatus, callNotes });
-          res.status(201).json({ status: 'success', data: lead });
-        } catch (err) {
-          next(err);
-        }
-      },
-    
-      getLeads: async (req, res, next) => {
-        try {
-          const filters = req.query;
-          const leads = await Lead.find(filters).sort({ createdAt: -1 });
-          res.status(200).json({ status: 'success', data: leads });
-        } catch (err) {
-          next(err);
-        }
-      },
-    
-      getLeadById: async (req, res, next) => {
-        try {
-          const lead = await Lead.findById(req.params.id);
-          if (!lead) throw new Error("Lead not found");
-          res.status(200).json({ status: 'success', data: lead });
-        } catch (err) { next(err); }
-      },
-    
-      updateLead: async (req, res, next) => {
-        try {
-          const allowed = ["firstName","lastName","phone","address","email","leadStatus"];
-          const updates = {};
-          allowed.forEach(f => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
-          const lead = await Lead.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
-          if (!lead) throw new Error("Lead not found");
-          res.status(200).json({ status: 'success', data: lead });
-        } catch (err) { next(err); }
-      },
-    
-      addLeadCallNote: async (req, res, next) => {
-        try {
-          const { content } = req.body;
-          const note = { content, createdBy: req.user._id };
-          const lead = await Lead.findByIdAndUpdate(
-            req.params.id,
-            { $push: { callNotes: note } },
-            { new: true, runValidators: true }
           );
-          if (!lead) throw new Error("Lead not found");
-          res.status(200).json({ status: 'success', data: lead });
-        } catch (err) { next(err); }
-      },
-    
-      updateLeadStatus: async (req, res, next) => {
-        try {
-          const { status } = req.body;
-          if (!["hot","warm","cold","lost","converted"].includes(status)) {
-            throw new Error("Invalid lead status");
-          }
-          const lead = await Lead.findByIdAndUpdate(
-            req.params.id,
-            { leadStatus: status },
-            { new: true }
-          );
-          if (!lead) throw new Error("Lead not found");
-          res.status(200).json({ status: 'success', data: lead });
-        } catch (err) { next(err); }
-      },
-    
-      convertLeadToStudent: async (req, res, next) => {
-        try {
-          const lead = await Lead.findById(req.params.id);
-          if (!lead) throw new Error("Lead not found");
-          const studentData = {
-            email: lead.email,
-            password: "changeme123",
-            role: "student",
-            firstName: lead.firstName,
-            lastName: lead.lastName,
-            phone: lead.phone,
-            address: lead.address,
-            leadRef: lead._id,
-            ...req.body.studentData
-          };
-          const student = await User.create(studentData);
-          lead.leadStatus = "converted";
-          await lead.save();
-          res.status(200).json({ status: 'success', data: student });
-        } catch (err) { next(err); }
-      },
-    
-      rejectLead: async (req, res, next) => {
-        try {
-          const { reason } = req.body;
-          const lead = await Lead.findById(req.params.id);
-          if (!lead) throw new Error("Lead not found");
-          lead.leadStatus = "lost";
-          lead.callNotes.push({ content: `Rejected: ${reason}`, createdBy: req.user._id });
-          await lead.save();
-          res.status(200).json({ status: 'success', data: lead });
-        } catch (err) { next(err); }
-      },
-    
-      deleteLead: async (req, res, next) => {
-        try {
-          const lead = await Lead.findByIdAndDelete(req.params.id);
-          if (!lead) throw new Error("Lead not found");
-          res.status(200).json({ status: 'success', data: { message: 'Lead deleted successfully' } });
-        } catch (err) { next(err); }
+        }
+        data.push({
+          id: student._id,
+          name: student.firstName + ' ' + student.lastName,
+          email: student.email,
+          phone: student.phone,               // added phone
+          dateOfBirth: student.dateOfBirth,
+          initials: student.firstName.charAt(0) + student.lastName.charAt(0),
+          classes: classes.length + ' classes',
+          subjects: subjects,
+          subscription: student.paymentSchedule,
+          paymentHistory: Payments,
+          isActive: student.isActive,
+
+
+        })
       }
-    };
-  
+      res.status(200).json({
+        status: 'success',
+        data: data
+      });
+    }
+    catch (error) {
+      res.status(500).json({ message: 'Error fetching students', error: error.message, status: "Error" });
+
+    }
+  },
+
+  getById: async (req, res) => {
+    try {
+      const student = await User.findOne({
+        _id: req.params.id,
+        role: 'student'
+      }).select('-password');
+
+      if (!student) {
+        return res.status(404).json({ message: 'Student not found' });
+      }
+
+      await createLog('READ', 'USER', student._id, req.user, req);
+
+      res.json(student);
+    } catch (error) {
+      res.status(500).json({ message: 'Error fetching student', error: error.message });
+    }
+  },
+
+  update: async (req, res) => {
+    try {
+
+      const { firstName, lastName, email, password, isActive } = req.body;
+      let updateData = {};
+
+      if (password) {
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+        updateData.password = hashedPassword;
+      }
+      if (isActive === true || isActive === false) {
+        updateData.isActive = isActive;
+      }
+      if (firstName) {
+        updateData.firstName = firstName;
+      }
+      if (lastName) {
+        updateData.lastName = lastName;
+      }
+      if (email) {
+        updateData.email = email;
+      }
+
+
+
+
+      const student = await User.findOneAndUpdate(
+        { _id: req.params.id, role: 'student' },
+        updateData,
+        { new: true }
+      ).select('-password');
+
+      if (!student) {
+        return res.status(404).json({ message: 'Student not found' });
+      }
+
+      await createLog('UPDATE', 'USER', student._id, req.user, req);
+
+      res.json({
+        message: 'Student updated successfully',
+        student
+      });
+    } catch (error) {
+      res.status(500).json({ message: 'Error updating student', error: error.message });
+    }
+  },
+  // Update in studentController.js
+  deactivateBulk: async (req, res) => {
+    try {
+      // Check if the request contains mixed activation statuses
+      const { studentIds, isActive, studentUpdates } = req.body;
+
+      console.log("Received bulk operation request:", req.body);
+
+      // Handle new format (mixed activation/deactivation)
+      if (studentUpdates && Array.isArray(studentUpdates) && studentUpdates.length > 0) {
+        // Using bulkWrite for efficiency with mixed operations
+        const bulkOperations = studentUpdates.map(update => ({
+          updateOne: {
+            filter: { _id: mongoose.Types.ObjectId(update.id), role: 'student' },
+            update: { $set: { isActive: !!update.isActive } }
+          }
+        }));
+
+        console.log(`Processing ${bulkOperations.length} mixed status updates`);
+
+        const result = await User.bulkWrite(bulkOperations);
+
+        // Track which students were updated for activity logging
+        const updatedIds = studentUpdates.map(u => mongoose.Types.ObjectId(u.id));
+        const updatedStudents = await User.find({
+          _id: { $in: updatedIds },
+          role: 'student'
+        }).select('firstName lastName isActive');
+
+        // Create activities for each student
+        if (updatedStudents.length > 0) {
+          const activities = updatedStudents.map(student => ({
+            name: `Student status updated`,
+            description: `Student ${student.firstName} ${student.lastName} was ${student.isActive ? 'activated' : 'deactivated'}`,
+            studentId: student._id
+          }));
+
+          try {
+            await Activity.insertMany(activities);
+          } catch (activityError) {
+            console.error("Error creating activities (non-fatal):", activityError);
+          }
+        }
+
+        // Create system log
+        try {
+          if (typeof createLog === 'function') {
+            await createLog(
+              'UPDATE', 'USER', null, req.user || { _id: 'system' }, req,
+              { role: 'student', bulkOperation: true, count: result.modifiedCount }
+            );
+          }
+        } catch (logError) {
+          console.error("Error creating system log (non-fatal):", logError);
+        }
+
+        return res.status(200).json({
+          status: 'success',
+          message: `Successfully updated ${result.modifiedCount} students with mixed statuses`,
+          result: result
+        });
+      }
+
+      // Original implementation (all students get same status)
+      if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
+        return res.status(400).json({
+          status: 'Error',
+          message: 'Please provide an array of student IDs'
+        });
+      }
+
+      // Make sure isActive is a boolean
+      const activeStatus = isActive === true || isActive === false ? isActive : false;
+
+      // Convert string IDs to ObjectId
+      const objectIds = studentIds.map(id => {
+        try {
+          return mongoose.Types.ObjectId(id);
+        } catch (e) {
+          return id; // Keep original if not valid ObjectId
+        }
+      });
+
+      // Update all students in the array
+      const result = await User.updateMany(
+        {
+          _id: { $in: objectIds },
+          role: 'student'
+        },
+        {
+          $set: { isActive: activeStatus }
+        }
+      );
+
+      console.log("Update result:", result);
+
+      // Skip activity creation if it's causing issues
+      try {
+        // Get all affected students for logging
+        const updatedStudents = await User.find({
+          _id: { $in: objectIds },
+          role: 'student'
+        }).select('firstName lastName');
+
+        // Create activities for each student if Activity model exists
+        if (typeof Activity !== 'undefined' && updatedStudents.length > 0) {
+          const statusText = activeStatus ? 'activated' : 'deactivated';
+          const activities = updatedStudents.map(student => ({
+            name: `Student ${statusText}`,
+            description: `Student ${student.firstName} ${student.lastName} was ${statusText}`,
+            studentId: student._id
+          }));
+
+          await Activity.insertMany(activities);
+        }
+      } catch (activityError) {
+        console.error("Error creating activities (non-fatal):", activityError);
+      }
+
+      // Create a system log if available
+      try {
+        if (typeof createLog === 'function') {
+          await createLog(
+            'UPDATE',
+            'USER',
+            null,
+            req.user || { _id: 'system' },
+            req,
+            { role: 'student', bulkOperation: true, count: result.modifiedCount }
+          );
+        }
+      } catch (logError) {
+        console.error("Error creating system log (non-fatal):", logError);
+      }
+
+      // Return the result
+      return res.status(200).json({
+        status: 'success',
+        message: `Successfully ${activeStatus ? 'activated' : 'deactivated'} ${result.modifiedCount} students`,
+        modifiedCount: result.modifiedCount,
+        matchedCount: result.matchedCount
+      });
+    } catch (error) {
+      console.error(`Error in bulk student status update:`, error);
+      return res.status(500).json({
+        status: 'Error',
+        message: `Error during bulk student status update`,
+        error: error.message
+      });
+    }
+  },
+  delete: async (req, res) => {
+    try {
+      const student = await User.findOneAndDelete({
+        _id: req.params.id,
+        role: 'student'
+      });
+
+      if (!student) {
+        return res.status(404).json({ message: 'Student not found' });
+      }
+
+      await createLog('DELETE', 'USER', student._id, req.user, req);
+
+      res.json({ message: 'Student deleted successfully' });
+    } catch (error) {
+      res.status(500).json({ message: 'Error deleting student', error: error.message });
+    }
+  },
+  updateStudent: async (req, res) => {
+    try {
+      const studentId = req.params.id;
+      const student = await User.findById(studentId);
+      if (!student || student.role !== 'student') {
+        return res.status(404).json({ status: 'Error', message: 'Student not found' });
+      }
+      const payload = req.body.student
+        ? JSON.parse(req.body.student)
+        : req.body;
+      if (payload.email && payload.email !== student.email) {
+        const conflict = await User.findOne({ email: payload.email });
+        if (conflict) {
+          return res
+            .status(400)
+            .json({ status: 'Error', message: 'Email already in use' });
+        }
+        student.email = payload.email;
+      }
+
+      if (payload.password) {
+        const salt = await bcrypt.genSalt(10);
+        student.password = await bcrypt.hash(payload.password, salt);
+      }
+
+      if (payload.firstName) student.firstName = payload.firstName;
+      if (payload.lastName) student.lastName = payload.lastName;
+      if (payload.phone) student.phone = payload.phone;
+      if (payload.dateOfBirth) student.dateOfBirth = payload.dateOfBirth;
+      if (payload.preferredPayment)
+        student.paymentSchedule = payload.preferredPayment;
+
+      await student.save();
+      const activity = new Activity({
+        name: 'Student Updated',
+        description: `Student ${student.firstName} ${student.lastName} updated`,
+        studentId: student._id
+      });
+      await activity.save();
+
+      await createLog('UPDATE', 'USER', student._id, req.user, req, { role: 'student' });
+      res.status(200).json({
+        status: 'success',
+        message: 'Student updated successfully',
+        student: {
+          _id: student._id,
+          email: student.email,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          phone: student.phone,
+          dateOfBirth: student.dateOfBirth,
+          paymentSchedule: student.paymentSchedule
+        }
+      });
+    } catch (error) {
+      console.error('Error updating student:', error);
+      res
+        .status(500)
+        .json({ status: 'Error', message: 'Error updating student', error: error.message });
+    }
+  },
+  createLead: async (req, res, next) => {
+    try {
+      const { firstName, lastName, phone, address, email, source, callNotes = [], leadStatus = "warm" } = req.body;
+
+      if (!firstName || !phone || !address || !email || !source) {
+        return res.status(400).json({
+          status: 'error',
+          message: "firstName, phone, address, email and source are required"
+        });
+      }
+
+      if (!["hot", "warm", "cold"].includes(leadStatus)) {
+        return res.status(400).json({
+          status: 'error',
+          message: "leadStatus must be 'hot', 'warm', or 'cold'"
+        });
+      }
+
+      const lead = await Lead.create({
+        firstName,
+        lastName,
+        phone,
+        address,
+        email,
+        source,
+        leadStatus,
+        callNotes
+      });
+
+      res.status(201).json({ status: 'success', data: lead });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  getLeads: async (req, res, next) => {
+    try {
+      const filters = req.query;
+      const leads = await Lead.find(filters).sort({ createdAt: -1 });
+      res.status(200).json({ status: 'success', data: leads });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  getLeadById: async (req, res, next) => {
+    try {
+      const lead = await Lead.findById(req.params.id);
+      if (!lead) throw new Error("Lead not found");
+      res.status(200).json({ status: 'success', data: lead });
+    } catch (err) { next(err); }
+  },
+
+  updateLead: async (req, res, next) => {
+    try {
+      const allowed = ["firstName", "lastName", "phone", "address", "email", "leadStatus", "source"];
+      const updates = {};
+      allowed.forEach(f => {
+        if (req.body[f] !== undefined) updates[f] = req.body[f];
+      });
+
+      if (req.body.newNote && req.body.newNote.content) {
+        const newNote = {
+          content: req.body.newNote.content,
+          createdBy: req.body.newNote.createdBy || req.user._id,
+          date: new Date()
+        };
+        updates.$push = { callNotes: newNote };
+      }
+
+      const lead = await Lead.findByIdAndUpdate(
+        req.params.id,
+        updates,
+        { new: true, runValidators: true }
+      );
+
+      if (!lead) throw new Error("Lead not found");
+      res.status(200).json({ status: 'success', data: lead });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  addLeadCallNote: async (req, res, next) => {
+    try {
+      const { content } = req.body;
+      const note = { content, createdBy: req.user._id };
+      const lead = await Lead.findByIdAndUpdate(
+        req.params.id,
+        { $push: { callNotes: note } },
+        { new: true, runValidators: true }
+      );
+      if (!lead) throw new Error("Lead not found");
+      res.status(200).json({ status: 'success', data: lead });
+    } catch (err) { next(err); }
+  },
+
+  updateLeadStatus: async (req, res, next) => {
+    try {
+      const { status } = req.body;
+      if (!["hot", "warm", "cold", "lost", "converted"].includes(status)) {
+        throw new Error("Invalid lead status");
+      }
+      const lead = await Lead.findByIdAndUpdate(
+        req.params.id,
+        { leadStatus: status },
+        { new: true }
+      );
+      if (!lead) throw new Error("Lead not found");
+      res.status(200).json({ status: 'success', data: lead });
+    } catch (err) { next(err); }
+  },
+
+  convertLeadToStudent: async (req, res, next) => {
+    try {
+      const lead = await Lead.findById(req.params.id);
+      if (!lead) throw new Error("Lead not found");
+
+      const {
+        firstName,
+        lastName,
+        email,
+        phone,
+        school,
+        prefferedPayment,
+        selfGuardian,
+        parentFirstName,
+        parentLastName,
+        parentEmail,
+        parentPhone
+      } = req.body;
+
+      // Prepare student data
+      const studentData = {
+        email: email || lead.email,
+        role: "student",
+        firstName: firstName || lead.firstName,
+        lastName: lastName || lead.lastName,
+        phone: phone || lead.phone,
+        address: lead.address,
+        leadRef: lead._id,
+        school,
+        prefferedPayment,
+        selfGuardian: selfGuardian || false
+      };
+
+      // If not self-guardian, add parent information
+      if (!selfGuardian && (parentFirstName || parentLastName || parentEmail || parentPhone)) {
+        studentData.parentInfo = {
+          firstName: parentFirstName,
+          lastName: parentLastName,
+          email: parentEmail,
+          phone: parentPhone,
+        };
+      }
+
+      // Create the student
+      const student = await User.create(studentData);
+
+      // Update lead status
+      lead.leadStatus = "converted";
+      await lead.save();
+
+      // Send response
+      res.status(200).json({
+        status: 'success',
+        message: 'Lead successfully converted to student',
+        data: student
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  rejectLead: async (req, res, next) => {
+    try {
+      const { reason } = req.body;
+      const lead = await Lead.findById(req.params.id);
+      if (!lead) throw new Error("Lead not found");
+      lead.leadStatus = "lost";
+      lead.callNotes.push({ content: `Rejected: ${reason}`, createdBy: req.user._id });
+      await lead.save();
+      res.status(200).json({ status: 'success', data: lead });
+    } catch (err) { next(err); }
+  },
+
+  deleteLead: async (req, res, next) => {
+    try {
+      const lead = await Lead.findByIdAndDelete(req.params.id);
+      if (!lead) throw new Error("Lead not found");
+      res.status(200).json({ status: 'success', data: { message: 'Lead deleted successfully' } });
+    } catch (err) { next(err); }
+  }
+};
+
 
 exports.studentController = studentController;

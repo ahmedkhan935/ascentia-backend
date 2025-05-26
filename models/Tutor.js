@@ -38,10 +38,11 @@ const tutorProfileSchema = new mongoose.Schema(
     },
     subjects: [String],
     grade: String,
+    // Modified to accept category ObjectIds instead of enum strings
     classCategories: [
       {
-        type: String,
-        enum: ["K-6", "7-10", "11-12"],
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Category"
       },
     ],
     qualifications: [
@@ -157,10 +158,10 @@ const tutorProfileSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // If you need to store the category name for quick access, keep this
     category: {
       type: String,
     },
-
     stripeAccountId: {
       type: String,
     },
@@ -171,7 +172,6 @@ const tutorProfileSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    
   },
   {
     timestamps: true,
