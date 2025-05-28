@@ -1813,6 +1813,61 @@ const ClassController = {
         { $sort: { totalRevenue: -1 } },
         { $limit: 5 }
       ]);
+      
+      // NEW: Get revenue by subject
+      const subjectsByRevenue = await Payment.aggregate([
+        {
+          $match: {
+            type: "Payment",
+            status: "completed",
+            createdAt: { $gte: selectedRange.start, $lte: selectedRange.end }
+          }
+        },
+        {
+          $lookup: {
+            from: "classsessions",
+            localField: "classSessionId",
+            foreignField: "_id",
+            as: "session"
+          }
+        },
+        { $unwind: { path: "$session", preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: "classes",
+            localField: "session.class",
+            foreignField: "_id",
+            as: "class"
+          }
+        },
+        { $unwind: { path: "$class", preserveNullAndEmptyArrays: true } },
+        {
+          $group: {
+            _id: "$class.subject",
+            totalRevenue: { $sum: "$amount" },
+            sessionCount: { $sum: 1 }
+          }
+        },
+        { $sort: { totalRevenue: -1 } }
+      ]);
+      
+      // Filter out null/undefined subjects and format
+      const formattedSubjectsByRevenue = subjectsByRevenue
+        .filter(item => item._id) // Filter out null/undefined subjects
+        .map(item => ({
+          subject: item._id,
+          revenue: item.totalRevenue,
+          sessions: item.sessionCount,
+          averagePerSession: item.sessionCount > 0 ? (item.totalRevenue / item.sessionCount).toFixed(2) : 0
+        }));
+      
+      // Find the top revenue-generating subject
+      const topRevenueSubject = formattedSubjectsByRevenue.length > 0 ? formattedSubjectsByRevenue[0] : {
+        subject: 'No data available',
+        revenue: 0,
+        sessions: 0,
+        averagePerSession: 0
+      };
   
       // Recent activities
       const recentPayments = await Payment.find()
@@ -1864,7 +1919,8 @@ const ClassController = {
             totalSessions: await ClassSession.countDocuments(),
             newStudents,
             newTutors,
-            newClasses
+            newClasses,
+            topRevenueSubject: topRevenueSubject.subject // NEW: Added top revenue subject
           },
   
           timeBasedMetrics: {
@@ -1917,7 +1973,8 @@ const ClassController = {
             profitMargin: profitMargin.toFixed(2),
             newStudents,
             revenueGrowth: revenueGrowth.toFixed(2),
-            profitGrowth: profitGrowth.toFixed(2)
+            profitGrowth: profitGrowth.toFixed(2),
+            topRevenueSubject: topRevenueSubject.subject // NEW: Added top revenue subject
           },
   
           advancedMetrics: {
@@ -1942,85 +1999,32 @@ const ClassController = {
               period: point.displayName,
               date: point.date,
               revenue: point.revenue,
-              profit: point.profit,
               expenses: point.expenses,
+              profit: point.profit,
               tutorPayouts: point.tutorPayouts,
               organizingCosts: point.organizingCosts,
-              sessions: point.sessions,
-              profitMargin: point.revenue > 0 ? ((point.profit / point.revenue) * 100).toFixed(1) : 0
+              sessions: point.sessions
             })),
-            
-            expenseBreakdown: [
-              {
-                name: "Tutor Payouts",
-                value: selectedFinancials.tutorPayouts,
-                percentage: selectedFinancials.totalExpenses > 0 ? ((selectedFinancials.tutorPayouts / selectedFinancials.totalExpenses) * 100).toFixed(1) : 0,
-                color: "#8B5CF6"
-              },
-              {
-                name: "Organizing Costs",
-                value: selectedFinancials.organizingCosts,
-                percentage: selectedFinancials.totalExpenses > 0 ? ((selectedFinancials.organizingCosts / selectedFinancials.totalExpenses) * 100).toFixed(1) : 0,
-                color: "#F59E0B"
-              }
-            ],
-  
-            revenueVsProfit: timeSeriesData.map(point => ({
-              period: point.displayName,
-              revenue: point.revenue,
-              profit: point.profit,
-              profitMargin: point.revenue > 0 ? ((point.profit / point.revenue) * 100) : 0
-            }))
-          },
-  
-          topPerformers: {
-            tutorsByRevenue: topTutorsByRevenue.map(tutor => ({
+            topTutors: topTutorsByRevenue.map(tutor => ({
               id: tutor._id,
               name: tutor.tutorName,
               revenue: tutor.totalRevenue,
               sessions: tutor.sessionCount,
-              subjects: tutor.subjects,
-              averagePerSession: tutor.sessionCount > 0 ? (tutor.totalRevenue / tutor.sessionCount).toFixed(2) : 0
+              subjects: tutor.subjects
             })),
-            subjectsByProfit: topTutorsByRevenue.map(tutor => ({
-              subject: tutor.subjects[0],
-              revenue: tutor.totalRevenue,
-              tutorPayouts: tutor.tutorPayouts,
-              organizingCosts: tutor.organizingCosts,
-              profit: tutor.totalRevenue - tutor.tutorPayouts - tutor.organizingCosts
-            }))
+            subjectsByRevenue: formattedSubjectsByRevenue
           },
-  
-          recentActivities: {
-            payments: formattedPayments,
-            summary: {
-              totalTransactions: formattedPayments.length,
-              completedPayments: formattedPayments.filter(p => p.status === 'completed').length,
-              pendingPayments: formattedPayments.filter(p => p.status === 'pending').length
-            }
-          },
-  
-          systemHealth: {
-            activeClassesRatio: totalClasses > 0 ? ((activeClasses / totalClasses) * 100).toFixed(1) : 0,
-            tutorUtilization: activeTutors > 0 ? ((selectedFinancials.sessionsCount / (activeTutors * 30)) * 100).toFixed(1) : 0,
-            revenueHealth: revenueGrowth >= 0 ? 'positive' : 'negative',
-            profitHealth: profitMargin >= 20 ? 'excellent' : profitMargin >= 10 ? 'good' : profitMargin >= 0 ? 'fair' : 'poor'
-          }
+          recentActivities: formattedPayments
         }
-      };
-  
-      res.json(response);
-  
-    } catch (error) {
-      console.error("Enhanced Dashboard Stats Error:", error);
-      res.status(500).json({
-        status: "failed",
-        message: "Error fetching dashboard statistics",
-        error: error.message
-      });
-    }
-  },
+      }
+        res.status(200).json(response);
+      } catch (error) {
+        console.error("Error fetching dashboard stats:", error);
+        res.status(500).json({ status: "error", message: "Internal Server Error" });
+      }
+  }
 };
+
 
 // Updated getClassSessions function
 const getClassSessions = async (req, res) => {
