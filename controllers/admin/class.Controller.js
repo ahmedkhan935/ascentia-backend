@@ -1981,6 +1981,13 @@ const ClassController = {
               sessions: tutor.sessionCount,
               subjects: tutor.subjects,
               averagePerSession: tutor.sessionCount > 0 ? (tutor.totalRevenue / tutor.sessionCount).toFixed(2) : 0
+            })),
+            subjectsByProfit: topTutorsByRevenue.map(tutor => ({
+              subject: tutor.subjects[0],
+              revenue: tutor.totalRevenue,
+              tutorPayouts: tutor.tutorPayouts,
+              organizingCosts: tutor.organizingCosts,
+              profit: tutor.totalRevenue - tutor.tutorPayouts - tutor.organizingCosts
             }))
           },
   

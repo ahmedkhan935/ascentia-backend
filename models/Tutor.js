@@ -34,7 +34,6 @@ const tutorProfileSchema = new mongoose.Schema(
       degree: String,
       graduationDate: Date,
       major: String,
-      city: String,
     },
     subjects: [String],
     grade: String,
@@ -45,6 +44,22 @@ const tutorProfileSchema = new mongoose.Schema(
         ref: "Category"
       },
     ],
+    atar: {
+      type: Number,
+      min: 0,
+      max: 99.95,
+    },
+    yearCompleted: {
+      type: Number,
+      min: 1900,
+      max: new Date().getFullYear(),
+    },
+    teachingExperience: {
+      type: String,
+      enum: ["0-1", "1-2", "2-5", "5+"],
+    },
+    specializations: [String],
+    achievements: String,
     qualifications: [
       {
         degree: String,

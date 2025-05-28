@@ -506,38 +506,147 @@ const studentController = {
   },
   createLead: async (req, res, next) => {
     try {
-      const { firstName, lastName, phone, address, email, source, callNotes = [], leadStatus = "warm" } = req.body;
-
-      if (!firstName || !phone || !address || !email || !source) {
+      const { 
+        firstName, 
+        lastName, 
+        phone, 
+        address, 
+        email, 
+        source, 
+        callNotes = [], 
+        leadStatus = "warm",
+        leadType = "student"
+      } = req.body;
+  
+      // Updated validation logic
+      if (!firstName || !source) {
         return res.status(400).json({
           status: 'error',
-          message: "firstName, phone, address, email and source are required"
+          message: "firstName and source are required"
         });
       }
-
+  
+      // Either email OR phone must be provided (flexible contact validation)
+      if (!email && !phone) {
+        return res.status(400).json({
+          status: 'error',
+          message: "Either email or phone number is required"
+        });
+      }
+  
+      // Validate email format if provided
+      if (email && !/\S+@\S+\.\S+/.test(email)) {
+        return res.status(400).json({
+          status: 'error',
+          message: "Invalid email format"
+        });
+      }
+  
+      // Validate phone format if provided
+      if (phone && !/^\+?[0-9()\-\s]{8,}$/.test(phone)) {
+        return res.status(400).json({
+          status: 'error',
+          message: "Invalid phone number format"
+        });
+      }
+  
+      // Validate leadStatus
       if (!["hot", "warm", "cold"].includes(leadStatus)) {
         return res.status(400).json({
           status: 'error',
           message: "leadStatus must be 'hot', 'warm', or 'cold'"
         });
       }
-
+  
+      // Validate leadType
+      if (!["student", "parent"].includes(leadType)) {
+        return res.status(400).json({
+          status: 'error',
+          message: "leadType must be 'student' or 'parent'"
+        });
+      }
+  
+      // Check for email uniqueness across both leads and users tables
+      if (email) {
+        // Check if email exists in leads table
+        const existingLead = await Lead.findOne({ 
+          email: email.toLowerCase().trim() 
+        });
+  
+        if (existingLead) {
+          return res.status(400).json({
+            status: 'error',
+            message: "A lead with this email already exists"
+          });
+        }
+  
+        // Check if email exists in users table
+        const existingUser = await User.findOne({ 
+          email: email.toLowerCase().trim() 
+        });
+  
+        if (existingUser) {
+          return res.status(400).json({
+            status: 'error',
+            message: "This email is already registered as a user. Please use a different email or convert the user to a lead."
+          });
+        }
+      }
+  
+      // Create the lead with updated fields
       const lead = await Lead.create({
-        firstName,
-        lastName,
-        phone,
-        address,
-        email,
-        source,
+        firstName: firstName.trim(),
+        lastName: lastName ? lastName.trim() : lastName,
+        phone: phone ? phone.trim() : phone,
+        address: address ? address.trim() : address,
+        email: email ? email.toLowerCase().trim() : email,
+        source: source.trim(),
         leadStatus,
+        leadType,
         callNotes
       });
-
-      res.status(201).json({ status: 'success', data: lead });
+  
+      res.status(201).json({ 
+        status: 'success', 
+        data: lead,
+        message: `${leadType.charAt(0).toUpperCase() + leadType.slice(1)} lead created successfully!`
+      });
+  
     } catch (err) {
+      // Handle any remaining duplicate key errors
+      if (err.code === 11000) {
+        let field = 'field';
+        let message = 'Duplicate entry detected';
+  
+        if (err.keyPattern?.email) {
+          field = 'email';
+          message = "A lead with this email already exists";
+        } else if (err.keyPattern?.phone) {
+          field = 'phone';
+          message = "A lead with this phone number already exists";
+        }
+  
+        return res.status(400).json({
+          status: 'error',
+          message: message,
+          field: field
+        });
+      }
+  
+      // Handle validation errors
+      if (err.name === 'ValidationError') {
+        const errors = Object.values(err.errors).map(e => e.message);
+        return res.status(400).json({
+          status: 'error',
+          message: 'Validation failed',
+          errors: errors
+        });
+      }
+  
       next(err);
     }
   },
+  
 
   getLeads: async (req, res, next) => {
     try {

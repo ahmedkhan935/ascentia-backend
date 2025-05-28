@@ -10,6 +10,7 @@ const bcrypt = require("bcryptjs");
 const dotenv = require("dotenv");
 const Payment = require("../../models/Payment");
 const { getPayments } = require("../tutor/tutor.Controller");
+const Category = require("../../models/Category");
 dotenv.config();
 const days  = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
@@ -37,10 +38,14 @@ const tutorController = {
       const category = parseField('category');
       const degree = parseField('degree');
       const university = parseField('university');
-      const city = parseField('city');
       const dateOfBirth = parseField('dateOfBirth');
       const startDate = parseField('startDate');
       const endDate = parseField('endDate');
+      const atar = parseField('atar');
+      const yearCompleted = parseField('yearCompleted');
+      const teachingExperience = parseField('teachingExperience');
+      const specializations = parseField('specializations') || [];
+      const achievements = parseField('achievements');
       
       // Parse new location fields from frontend - with validation
       const address = parseField('address');
@@ -114,10 +119,14 @@ const tutorController = {
           startDate,
           endDate,
         }],
+        atar,
+        yearCompleted,
+        teachingExperience,
+        specializations,
+        achievements,
         education: {
           university,
           degree,
-          city,
         },
         personalDetails: {
           dateOfBirth
@@ -361,10 +370,9 @@ const tutorController = {
 
   getById: async (req, res) => {
     try {
-      const tutor = await TutorProfile.findById(req.params.id).populate(
-        "user",
-        "-password"
-      );
+      const tutor = await TutorProfile.findById(req.params.id)
+        .populate("user", "-password")
+        .populate("classCategories");
 
       if (!tutor) {
         return res.status(404).json({ message: "Tutor not found" });
@@ -379,10 +387,17 @@ const tutorController = {
           const endTime = endHour + endMinute / 60;
           return total + (endTime - startTime);
         }, 0) || 0;
+      // Map category names
+      const categoryNames = tutor.classCategories
+        ? tutor.classCategories.map(cat => cat.name)
+        : [];
       //return the work hours aswell
       const response = {
         data: {
-          tutor,
+          tutor: {
+            ...tutor.toObject(),
+            categoryNames,
+          },
           workHours: totalWorkHours,
         },
       };
@@ -445,7 +460,7 @@ const tutorController = {
       if (!status)
         return res.status(400).json({ message: "Status is required." });
   
-      // Accept the word “deactivated” from the UI and map it to the schema value “inactive”
+      // Accept the word "deactivated" from the UI and map it to the schema value "inactive"
       if (status === "deactivated") status = "inactive";
   
       // Whitelist against the enum in the schema
@@ -1182,22 +1197,22 @@ const tutorController = {
   },
 
   
-  updateTutor: async (req, res) => {  
+  updateTutor: async (req, res) => {
     try {
       // 1) Treat req.params.id as the TutorProfile _id
       const profileId = req.params.id;
-  
+      
       const profile = await TutorProfile.findById(profileId);
       if (!profile) {
         return res.status(404).json({ message: 'Tutor profile not found' });
       }
-  
+      
       // 2) Now load the User by profile.user
       const user = await User.findById(profile.user);
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
       }
-  
+      
       // Update email if provided
       if (req.body.email) {
         const newEmail = req.body.email.trim().toLowerCase();
@@ -1209,26 +1224,26 @@ const tutorController = {
           user.email = newEmail;
         }
       }
-  
+      
       // Update first name if provided
       if (req.body.firstName) {
         user.firstName = req.body.firstName;
       }
-  
+      
       // Update last name if provided
       if (req.body.lastName) {
         user.lastName = req.body.lastName;
       }
-  
+      
       // Update phone if provided
       if (req.body.phone) {
         user.phone = req.body.phone;
       }
-  
+      
       // Save the updated user
       await user.save();
       console.log("Saved updated user");
-  
+      
       // 3) Update TutorProfile fields
       
       // Update subjects if provided
@@ -1237,56 +1252,103 @@ const tutorController = {
           ? req.body.subjects
           : JSON.parse(req.body.subjects);
       }
-  
+      
       // Ensure qualifications array exists
       if (!Array.isArray(profile.qualifications) || profile.qualifications.length === 0) {
         profile.qualifications = [{ degree: "", institution: "" }];
       }
-  
+      
       // Update degree if provided
       if (req.body.degree) {
         profile.qualifications[0].degree = req.body.degree;
       }
-  
+      
       // Update university/institution if provided
       if (req.body.university) {
         profile.qualifications[0].institution = req.body.university;
       }
-  
+      
       // Update address if provided
       if (req.body.address) {
-        profile.address = req.body.address;
+        // Check if location object exists, if not create it
+        if (!profile.location) {
+          profile.location = {
+            address: req.body.address,
+            coordinates: profile.location?.coordinates || {}
+          };
+        } else {
+          profile.location.address = req.body.address;
+        }
       }
-  
+      
+      // Update ATAR score if provided
+      if (req.body.atar) {
+        const atarValue = parseFloat(req.body.atar);
+        if (!isNaN(atarValue)) {
+          profile.atar = atarValue;
+        }
+      }
+      
+      // Update year completed if provided
+      if (req.body.yearCompleted) {
+        const yearValue = parseInt(req.body.yearCompleted);
+        if (!isNaN(yearValue)) {
+          profile.yearCompleted = yearValue;
+        }
+      }
+      
+      // Update teaching experience if provided
+      if (req.body.teachingExperience) {
+        profile.teachingExperience = req.body.teachingExperience;
+      }
+      
+      // Update specializations if provided
+      if (req.body.specializations) {
+        profile.specializations = Array.isArray(req.body.specializations)
+          ? req.body.specializations
+          : JSON.parse(req.body.specializations);
+      }
+      
+      // Update achievements if provided
+      if (req.body.achievements) {
+        profile.achievements = req.body.achievements;
+      }
+      
       // Save the updated profile
       await profile.save();
       console.log("Saved updated profile");
-  
+      
       // 4) Log activity
       const activity = new Activity({
-        name:             'Tutor Updated',
-        description:      `Tutor ${user.firstName} ${user.lastName} updated`,
-        tutorProfileId:   profileId,
+        name: 'Tutor Updated',
+        description: `Tutor ${user.firstName} ${user.lastName} updated`,
+        tutorProfileId: profileId,
       });
       await activity.save();
       await createLog('UPDATE', 'TUTOR', profileId, req.user, req);
-  
-      const freshUser    = await User.findById(user._id);
-      const freshProfile = await TutorProfile.findById(profileId);
-  
+      
+      const freshUser = await User.findById(user._id);
+      const freshProfile = await TutorProfile.findById(profileId)
+        .populate('classCategories') // Populate class categories for complete data
+        .lean(); // Use lean for better performance
+      
+      // Add category names for display
+      if (freshProfile.classCategories && freshProfile.classCategories.length > 0) {
+        freshProfile.categoryNames = freshProfile.classCategories.map(category => category.name);
+      }
+      
       // 6) Respond with updated data
       res.status(200).json({
         message: 'Tutor updated successfully',
         tutor: {
-          profileId,
+          ...freshProfile,
           user: {
-            _id:       freshUser._id,
-            email:     freshUser.email,
+            _id: freshUser._id,
+            email: freshUser.email,
             firstName: freshUser.firstName,
-            lastName:  freshUser.lastName,
-            phone:     freshUser.phone,
-          },
-          profile: freshProfile
+            lastName: freshUser.lastName,
+            phone: freshUser.phone,
+          }
         },
       });
       console.log("Response sent");
