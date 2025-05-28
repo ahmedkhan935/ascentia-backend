@@ -56,7 +56,7 @@ const tutorProfileSchema = new mongoose.Schema(
     },
     teachingExperience: {
       type: String,
-      enum: ["0-1", "1-2", "2-5", "5+"],
+      enum: ["0-1", "1-3", "3-5", "5-10","10+"],
     },
     specializations: [String],
     achievements: String,
