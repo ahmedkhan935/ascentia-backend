@@ -27,11 +27,9 @@ const userSchema = new mongoose.Schema({
       return this.role !== 'parent'&& this.role !== 'student'&& this.role!='tutor';
     },
   },
-  grade:{
-    type:String, 
-    required: function() {
-      return this.role === "student";
-    },
+  grade: {
+    type: String,
+    required: false,
   },
   school:{
     type:String,

@@ -695,6 +695,7 @@ const studentController = {
       res.status(500).json({ message: 'Error deleting student', error: error.message });
     }
   },
+
   updateStudent: async (req, res) => {
     try {
       const studentId = req.params.id;
@@ -715,6 +716,11 @@ const studentController = {
             .json({ status: 'Error', message: 'Email already in use' });
         }
         student.email = payload.email;
+      }
+  
+      // Clear email if it's explicitly set to empty string
+      if (payload.email === '') {
+        student.email = undefined;
       }
   
       // Update password if provided
@@ -727,105 +733,19 @@ const studentController = {
       if (payload.firstName) student.firstName = payload.firstName;
       if (payload.lastName) student.lastName = payload.lastName;
       if (payload.phone) student.phone = payload.phone;
-      if (payload.dateOfBirth) student.dateOfBirth = payload.dateOfBirth;
   
-      // Update school and grade from frontend
+      // Handle school field - allow empty string to clear the field
       if (payload.school !== undefined) {
-        student.school = payload.school;
-      }
-      if (payload.grade !== undefined) {
-        student.grade = payload.grade;
+        student.school = payload.school || undefined; // Convert empty string to undefined
       }
   
-      // Map preferredPayment (from form) to paymentSchedule
+      // Handle grade field - allow empty string to clear the field
+      if (payload.grade !== undefined) {
+        student.grade = payload.grade || undefined; // Convert empty string to undefined
+      }
+  
+      // Update preferred payment
       if (payload.preferredPayment) {
-        student.paymentSchedule = payload.preferredPayment;
-      }
-  
-      await student.save();
-  
-      // Log the activity
-      const activity = new Activity({
-        name: 'Student Updated',
-        description: `Student ${student.firstName} ${student.lastName} updated`,
-        studentId: student._id
-      });
-      await activity.save();
-  
-      await createLog(
-        'UPDATE',
-        'USER',
-        student._id,
-        req.user,
-        req,
-        { role: 'student' }
-      );
-  
-      // Return the updated student fields, including the newly added school & grade
-      res.status(200).json({
-        status: 'success',
-        message: 'Student updated successfully',
-        student: {
-          _id: student._id,
-          email: student.email,
-          firstName: student.firstName,
-          lastName: student.lastName,
-          phone: student.phone,
-          dateOfBirth: student.dateOfBirth,
-          school: student.school || null,
-          grade: student.grade || null,
-          paymentSchedule: student.paymentSchedule
-        }
-      });
-    } catch (error) {
-      console.error('Error updating student:', error);
-      res.status(500).json({
-        status: 'Error',
-        message: 'Error updating student',
-        error: error.message
-      });
-    }
-  },
-  updateStudent: async (req, res) => {
-    try {
-      const studentId = req.params.id;
-      const student = await User.findById(studentId);
-      if (!student || student.role !== 'student') {
-        return res.status(404).json({ status: 'Error', message: 'Student not found' });
-      }
-  
-      // Since the frontend sends a plain JSON body, we can read directly from req.body
-      const payload = req.body;
-  
-      // Check for email change and conflict
-      if (payload.email && payload.email !== student.email) {
-        const conflict = await User.findOne({ email: payload.email });
-        if (conflict) {
-          return res
-            .status(400)
-            .json({ status: 'Error', message: 'Email already in use' });
-        }
-        student.email = payload.email;
-      }
-  
-      // Update password if provided
-      if (payload.password) {
-        const salt = await bcrypt.genSalt(10);
-        student.password = await bcrypt.hash(payload.password, salt);
-      }
-  
-      // Update basic fields
-      if (payload.firstName) student.firstName = payload.firstName;
-      if (payload.lastName) student.lastName = payload.lastName;
-      if (payload.phone) student.phone = payload.phone;  
-      // Update school and grade from frontend
-      if (payload.school !== undefined) {
-        student.school = payload.school;
-      }
-      if (payload.grade !== undefined) {
-        student.grade = payload.grade;
-      }
-        if (payload.preferredPayment) {
         student.paymentSchedule = payload.preferredPayment;
       }
   
@@ -966,7 +886,7 @@ const studentController = {
           email: cleanEmail 
         });
   
-        if (existingUser) {
+        if (existingUser) { 
           return res.status(400).json({
             status: 'error',
             message: "This email is already registered as a user. Please use a different email."
@@ -1131,13 +1051,14 @@ const studentController = {
     try {
       const lead = await Lead.findById(req.params.id);
       if (!lead) throw new Error("Lead not found");
-
+  
       const {
         firstName,
         lastName,
         email,
         phone,
         school,
+        grade,
         prefferedPayment,
         selfGuardian,
         parentFirstName,
@@ -1145,38 +1066,68 @@ const studentController = {
         parentEmail,
         parentPhone
       } = req.body;
-
+  
+      // Check if student email already exists (if email is provided)
+      const studentEmail = email; // Only use the email from the form, not lead fallback
+      if (studentEmail && studentEmail.trim() !== '') {
+        const existingUserWithEmail = await User.findOne({ email: studentEmail });
+        if (existingUserWithEmail) {
+          return res.status(400).json({
+            status: 'error',
+            message: `A user with email "${studentEmail}" already exists`
+          });
+        }
+      }
+  
+      // Check if parent email already exists (if parent email is provided and not self-guardian)
+      if (!selfGuardian && parentEmail && parentEmail.trim() !== '') {
+        const existingParentWithEmail = await User.findOne({ email: parentEmail });
+        if (existingParentWithEmail) {
+          return res.status(400).json({
+            status: 'error',
+            message: `A user with parent email "${parentEmail}" already exists`
+          });
+        }
+      }
+  
       // Prepare student data
       const studentData = {
-        email: email || lead.email,
         role: "student",
         firstName: firstName || lead.firstName,
         lastName: lastName || lead.lastName,
         phone: phone || lead.phone,
         address: lead.address,
         leadRef: lead._id,
-        school,
-        prefferedPayment,
+        school: school || "",
+        grade: grade || "",
+        prefferedPayment: prefferedPayment || "Monthly",
         selfGuardian: selfGuardian || false
       };
-
+  
+      // Only add email if it's provided and not empty
+      if (email && email.trim() !== '') {
+        studentData.email = email;
+      } else if (lead.email && lead.email.trim() !== '') {
+        studentData.email = lead.email;
+      }
+  
       // If not self-guardian, add parent information
       if (!selfGuardian && (parentFirstName || parentLastName || parentEmail || parentPhone)) {
         studentData.parentInfo = {
-          firstName: parentFirstName,
-          lastName: parentLastName,
-          email: parentEmail,
-          phone: parentPhone,
+          firstName: parentFirstName || "",
+          lastName: parentLastName || "",
+          email: parentEmail || "",
+          phone: parentPhone || "",
         };
       }
-
+  
       // Create the student
       const student = await User.create(studentData);
-
+  
       // Update lead status
       lead.leadStatus = "converted";
       await lead.save();
-
+  
       // Send response
       res.status(200).json({
         status: 'success',
