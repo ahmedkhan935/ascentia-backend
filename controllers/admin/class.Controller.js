@@ -664,7 +664,7 @@ const ClassController = {
           .status(404)
           .json({ message: "Session not found", status: "failed" });
       }
-
+  
       // Check if the session type allows room assignment
       if (session.sessionType !== 'our-space') {
         return res.status(400).json({
@@ -672,27 +672,40 @@ const ClassController = {
           status: "failed",
         });
       }
-
-      //check if already assigned a room if yes then remove the booking from that room
+  
+      // Check if already assigned a room if yes then remove the booking from that room
       if (session.room) {
-        const room = await Room.findById(session.room);
-        const bookingIndex = room.bookings.findIndex(
-          (booking) => booking.classSession.toString() === sessionId
-        );
-        await Room.findByIdAndUpdate(session.room, {
-          $pull: {
-            bookings: room.bookings[bookingIndex],
-          },
-        });
+        try {
+          const oldRoom = await Room.findById(session.room);
+          if (oldRoom) {
+            // Room exists, remove the booking
+            const bookingIndex = oldRoom.bookings.findIndex(
+              (booking) => booking.classSession.toString() === sessionId
+            );
+            if (bookingIndex !== -1) {
+              await Room.findByIdAndUpdate(session.room, {
+                $pull: {
+                  bookings: oldRoom.bookings[bookingIndex],
+                },
+              });
+            }
+          }
+          // If room doesn't exist (deleted), we just continue without error
+        } catch (error) {
+          // Log the error but don't stop the process
+          console.log(`Old room ${session.room} not found or error removing booking:`, error.message);
+        }
       }
-      
+  
+      // Check if the new room exists
       const room = await Room.findById(roomId);
       if (!room) {
         return res
           .status(404)
           .json({ message: "Room not found", status: "failed" });
       }
-      
+  
+      // Check room availability
       const isRoomAvailable = await checkRoomAvailability(
         roomId,
         session.date,
@@ -705,7 +718,8 @@ const ClassController = {
           status: "failed",
         });
       }
-      
+  
+      // Add booking to the new room
       await Room.findByIdAndUpdate(roomId, {
         $push: {
           bookings: {
@@ -717,10 +731,14 @@ const ClassController = {
           },
         },
       });
-      
+  
+      // Get class name for activity description
       const class_name = await Class.findById(session.class);
-      await ClassSession.findByIdAndUpdate(sessionId, { room: roomId });
       
+      // Update session with new room
+      await ClassSession.findByIdAndUpdate(sessionId, { room: roomId });
+  
+      // Create activity log
       const newActivity = new Activity({
         name: "Room Assigned",
         description: `Room ${room.name} assigned to session for ${class_name.subject} on ${session.date.toISOString().split("T")[0]} at ${session.startTime}-${session.endTime}`,
@@ -728,7 +746,7 @@ const ClassController = {
         classSession: session._id,
       });
       await newActivity.save();
-      
+  
       res
         .status(200)
         .json({ message: "Room assigned to session", status: "success" });
@@ -937,6 +955,136 @@ const ClassController = {
     } catch (err) {
       console.error("cancelSession Error:", err);
       return res.status(500).json({ status: "failed", message: err.message });
+    }
+  },
+  cancelFutureSessions: async (req, res) => {
+    try {
+      const { classId, reason, startFromDate } = req.body;
+      const userId = req.user && req.user._id;
+  
+      // Validate inputs
+      if (!classId || !reason) {
+        return res.status(400).json({
+          status: "failed",
+          message: "Class ID and cancellation reason are required"
+        });
+      }
+  
+      // Use provided date or default to today
+      const fromDate = startFromDate ? new Date(startFromDate) : new Date();
+      fromDate.setHours(0, 0, 0, 0); // Set to start of day
+  
+      // Find the class to get end date
+      const classData = await Class.findById(classId);
+      if (!classData) {
+        return res.status(404).json({
+          status: "failed",
+          message: "Class not found"
+        });
+      }
+  
+      // Find all future sessions for this class that are not already cancelled or completed
+      const futureSessions = await ClassSession.find({
+        class: classId,
+        date: { 
+          $gte: fromDate,
+          $lte: classData.endDate
+        },
+        status: { $in: ["scheduled", "rescheduled", "pending"] }
+      });
+  
+      if (futureSessions.length === 0) {
+        return res.status(400).json({
+          status: "failed",
+          message: "No future sessions found to cancel"
+        });
+      }
+  
+      const cancelledSessions = [];
+      let totalDeletedPayments = 0;
+  
+      // Process each session
+      for (const session of futureSessions) {
+        try {
+          // Delete all payments associated with this session
+          const deletedPayments = await Payment.deleteMany({ 
+            classSessionId: session._id 
+          });
+          totalDeletedPayments += deletedPayments.deletedCount;
+  
+          // Remove room booking (only for our-space sessions)
+          if (session.room && session.sessionType === 'our-space') {
+            await Room.findByIdAndUpdate(session.room, {
+              $pull: { bookings: { classSession: session._id } }
+            });
+          }
+  
+          // Update session status
+          session.status = "cancelled";
+          session.cancellationReason = reason;
+          session.cancelledBy = userId || null;
+          session.cancelledAt = new Date();
+          await session.save();
+  
+          cancelledSessions.push({
+            sessionId: session._id,
+            date: session.date,
+            startTime: session.startTime,
+            endTime: session.endTime
+          });
+  
+          // Create individual activity log for each cancelled session
+          await Activity.create({
+            name: "Session Cancelled (Bulk)",
+            description: `Session for class ${classData.subject} on ${session.date.toISOString().split("T")[0]} (${session.startTime}-${session.endTime}) cancelled as part of bulk cancellation: ${reason}`,
+            class: session.class,
+            classSession: session._id,
+            user: userId
+          });
+  
+        } catch (sessionError) {
+          console.error(`Error cancelling session ${session._id}:`, sessionError);
+          // Continue with other sessions even if one fails
+        }
+      }
+  
+      // Create a summary activity log
+      await Activity.create({
+        name: "Bulk Sessions Cancelled",
+        description: `${cancelledSessions.length} future sessions cancelled for ${classData.subject} from ${fromDate.toISOString().split("T")[0]} onwards. Reason: ${reason}. ${totalDeletedPayments} associated payments removed.`,
+        class: classId,
+        user: userId
+      });
+  
+      // Check if class should be marked as completed (if no more active sessions)
+      const remainingActiveSessions = await ClassSession.find({
+        class: classId,
+        status: { $in: ["scheduled", "rescheduled", "pending"] }
+      });
+  
+      if (remainingActiveSessions.length === 0) {
+        await Class.findByIdAndUpdate(classId, { status: "completed" });
+      }
+  
+      return res.status(200).json({
+        status: "success",
+        message: `Successfully cancelled ${cancelledSessions.length} future sessions`,
+        data: {
+          cancelledSessionsCount: cancelledSessions.length,
+          cancelledSessions: cancelledSessions,
+          deletedPayments: totalDeletedPayments,
+          fromDate: fromDate.toISOString().split("T")[0],
+          toDate: classData.endDate.toISOString().split("T")[0]
+        }
+      });
+  
+    } catch (error) {
+      console.error("cancelFutureSessions Error:", error);
+      return res.status(500).json({
+        status: "failed",
+        message: "Error cancelling future sessions",
+        error: error.message
+      });
     }
   },
 
@@ -1286,7 +1434,7 @@ const ClassController = {
           status: "failed",
         });
       }
-      
+  
       // Check if the session type allows room unassignment
       if (session.sessionType !== 'our-space') {
         return res.status(400).json({
@@ -1294,28 +1442,50 @@ const ClassController = {
           status: "failed",
         });
       }
-      
-      //remove the booking from room
-      const room = await Room.findById(session.room);
-      const bookingIndex = room.bookings.findIndex(
-        (booking) => booking.classSession.toString() === sessionId
-      );
-      const updatedRoom = await Room.findByIdAndUpdate(session.room, {
-        $pull: {
-          bookings: room.bookings[bookingIndex],
-        },
-      });
-
-      const updatedSession = await ClassSession.findByIdAndUpdate(sessionId, {
+  
+      let roomName = "Unknown Room"; // Default fallback name
+  
+      // Remove the booking from room (if room still exists)
+      try {
+        const room = await Room.findById(session.room);
+        if (room) {
+          roomName = room.name; // Store room name for activity log
+          const bookingIndex = room.bookings.findIndex(
+            (booking) => booking.classSession.toString() === sessionId
+          );
+          if (bookingIndex !== -1) {
+            await Room.findByIdAndUpdate(session.room, {
+              $pull: {
+                bookings: room.bookings[bookingIndex],
+              },
+            });
+          }
+        } else {
+          // Room was deleted, but we can still unassign it from the session
+          console.log(`Room ${session.room} not found (possibly deleted), proceeding with unassignment`);
+        }
+      } catch (error) {
+        // Log the error but don't stop the unassignment process
+        console.log(`Error accessing room ${session.room}:`, error.message);
+      }
+  
+      // Always unassign the room from the session, regardless of whether the room exists
+      await ClassSession.findByIdAndUpdate(sessionId, {
         room: null,
       });
+  
+      // Get class name for activity description
+      const class_name = await Class.findById(session.class);
+      
+      // Create activity log
       const newActivity = new Activity({
         name: "Room Unassigned",
-        description: `Room ${room.name} unassigned from session for ${session.class} on ${session.date.toISOString().split("T")[0]} at ${session.startTime}-${session.endTime}`,
+        description: `Room ${roomName} unassigned from session for ${class_name?.subject || 'Unknown Class'} on ${session.date.toISOString().split("T")[0]} at ${session.startTime}-${session.endTime}`,
         class: session.class,
         classSession: session._id,
       });
       await newActivity.save();
+  
       res
         .status(200)
         .json({ message: "Room unassigned from session", status: "success" });

@@ -38,6 +38,7 @@ router.post(
   [authenticateJWT, isAdmin],
   ClassController.createClass
 );
+router.post("/cancel-future-sessions", [authenticateJWT,isAdmin], ClassController.cancelFutureSessions);
 router.get(
   "/",
   [authenticateJWT, isAdmin],

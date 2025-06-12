@@ -1358,48 +1358,57 @@ const tutorController = {
     }
   },
 
-getTutorSessionsforconflicts: async (req, res) => {
-  try {
-    const profileId = req.params.profileId;
-
-    // 1) Verify the tutor profile exists
-    const profile = await TutorProfile.findById(profileId);
-    if (!profile) {
-      return res.status(404).json({ message: "Tutor profile not found" });
+  getTutorSessionsforconflicts: async (req, res) => {
+    try {
+      const profileId = req.params.profileId;
+  
+      // 1) Verify the tutor profile exists
+      const profile = await TutorProfile.findById(profileId);
+      if (!profile) {
+        return res.status(404).json({ message: "Tutor profile not found" });
+      }
+  
+      // 2) Fetch sessions field along with startDate and endDate from each Class
+      const classes = await Class.find(
+        { tutor: profileId },
+        { sessions: 1, startDate: 1, endDate: 1, _id: 1 }
+      ).lean();
+  
+      // 3) Flatten into one array, attaching startDate and endDate from the class
+      const sessions = classes.flatMap(cls =>
+        (cls.sessions || []).map(sess => ({
+          _id: sess._id,
+          classId: cls._id, // Keep this for reference if needed
+          dayOfWeek: sess.dayOfWeek,
+          startTime: sess.startTime,
+          endTime: sess.endTime,
+          startDate: cls.startDate, // Class start date
+          endDate: cls.endDate,     // Class end date
+          // Include session-specific dates if they exist
+          specificDate: sess.specificDate,
+          date: sess.date,
+          // Include other useful session fields
+          status: sess.status,
+          recurrence: sess.recurrence,
+          isTrial: sess.isTrial
+        }))
+      );
+  
+      // 4) Return
+      return res.json({
+        status: "success",
+        data: sessions
+      });
+    } catch (err) {
+      console.error("getTutorSessions error:", err);
+      return res.status(500).json({
+        message: "Server error",
+        error: err.message
+      });
     }
+  },
 
-    // 2) Fetch only the `sessions` field from each Class
-    const classes = await Class.find(
-      { tutor: profileId },
-      { sessions: 1 }
-    ).lean();
-
-    // 3) Flatten into one array, attaching classId if desired
-    const sessions = classes.flatMap(cls =>
-      (cls.sessions || []).map(sess => ({
-        _id:       sess._id,
-        classId:   cls._id,
-        dayOfWeek: sess.dayOfWeek,
-        startTime: sess.startTime,
-        endTime:   sess.endTime,
-      }))
-    );
-
-    // 4) Return
-    return res.json({
-      status: "success",
-      data: sessions
-    });
-  } catch (err) {
-    console.error("getTutorSessions error:", err);
-    return res.status(500).json({
-      message: "Server error",
-      error: err.message
-    });
-  }
-},
-
-getTutorSessions:async (req, res) => {
+getTutorSessions: async (req, res) => {
   try {
     const profileId = req.params.profileId;
 
@@ -1420,7 +1429,7 @@ getTutorSessions:async (req, res) => {
     // -- optional: populate back to the Class to grab subject, price, etc.
     .populate({
       path: "class",
-      select: "subject type price tutor"
+      select: "subject type price tutor startDate endDate" // Added startDate and endDate
     })
     // -- optional: populate attendance.student and markedBy
     .populate({
@@ -1436,17 +1445,24 @@ getTutorSessions:async (req, res) => {
     .populate("room cancelledBy rescheduledTo rescheduledFrom")
     .lean();
 
-    // 4) Return the full ClassSession list
+    // 4) Transform the sessions to include startDate and endDate at the session level
+    const transformedSessions = sessions.map(session => ({
+      ...session,
+      startDate: session.class?.startDate || null,
+      endDate: session.class?.endDate || null
+    }));
+
+    // 5) Return the full ClassSession list with start/end dates
     return res.json({
       status: "success",
-      data:   sessions
+      data: transformedSessions
     });
 
   } catch (err) {
     console.error("getTutorSessions error:", err);
     return res.status(500).json({
       message: "Server error",
-      error:   err.message
+      error: err.message
     });
   }
 },
