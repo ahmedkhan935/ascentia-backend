@@ -116,4 +116,25 @@ router.delete(
   studentController.delete
 );
 
+// Add a note to a student
+router.post(
+  '/:id/notes',
+  [authenticateJWT, isAdmin],
+  studentController.addNote
+);
+
+// Edit a note for a student
+router.put(
+  '/:id/notes/:noteId',
+  [authenticateJWT, isAdmin],
+  studentController.editNote
+);
+
+// Delete a note for a student
+router.delete(
+  '/:id/notes/:noteId',
+  [authenticateJWT, isAdmin],
+  studentController.deleteNote
+);
+
 module.exports = router;

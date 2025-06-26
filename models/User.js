@@ -54,6 +54,14 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  notes: [
+    {
+      _id: { type: Schema.Types.ObjectId, auto: true },
+      date: { type: Date, default: Date.now },
+      content: { type: String, required: true },
+      createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true }
+    }
+  ],
 });
 
 const User = mongoose.model("User", userSchema);

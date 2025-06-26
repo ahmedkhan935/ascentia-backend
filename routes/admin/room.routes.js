@@ -18,6 +18,8 @@ router.delete('/:id/booking/:bookingId',         [authenticateJWT, isAdmin], roo
 /* ─────────────────────────────── ROOM-USAGE helpers ───────────────────────────────── */
 router.get('/available',          [authenticateJWT, isAdmin], RoomAvailabilityController.getAvailableRooms);
 router.get('/stats',              [authenticateJWT, isAdmin], RoomAvailabilityController.getRoomUsageStats);
+router.get('/weekly-availability', [authenticateJWT, isAdmin], RoomAvailabilityController.getWeeklyAvailability);
+
 
 /* ───────────────────────────── endpoints with :roomId BEFORE generic :id ───────────── */
 router.get('/:roomId/availability',[authenticateJWT, isAdmin], RoomAvailabilityController.checkAvailability);
@@ -26,5 +28,6 @@ router.get('/:roomId/schedule',   [authenticateJWT, isAdmin], RoomAvailabilityCo
 /* ─────────────────────────────── READ (generic) ───────────────────────────────────── */
 router.get('/',                   [authenticateJWT, isAdmin], roomController.GetAllRooms);
 router.get('/:id',                [authenticateJWT, isAdmin], roomController.GetRoom);
+
 
 module.exports = router;

@@ -7,6 +7,32 @@ const callNoteSchema = new Schema({
   createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true }
 });
 
+// Secondary contact sub-schema
+const secondaryContactSchema = new Schema({
+  firstName: { 
+    type: String, 
+    trim: true
+  },
+  lastName: { 
+    type: String,
+    trim: true
+  },
+  email: { 
+    type: String, 
+    lowercase: true,
+    trim: true
+  },
+  phone: { 
+    type: String, 
+    trim: true
+  },
+  relationship: {
+    type: String,
+    enum: ["parent", "guardian", "sibling", "relative", "friend", "other"],
+    default: "parent"
+  }
+}, { _id: false }); // Don't create separate _id for subdocument
+
 const leadSchema = new Schema({
   firstName: { 
     type: String, 
@@ -41,8 +67,8 @@ const leadSchema = new Schema({
   },
   leadStatus: { 
     type: String, 
-    enum: ["hot", "warm", "cold", "converted", "lost"], 
-    default: "warm" 
+    enum: ["initial_contact", "follow_up", "hot", "warm", "cold", "converted", "lost"], 
+    default: "initial_contact" 
   },
   leadType: { 
     type: String, 
@@ -50,18 +76,20 @@ const leadSchema = new Schema({
     default: "student",
     required: true
   },
+  // Secondary contact information
+  secondaryContact: secondaryContactSchema,
+  
   callNotes: [callNoteSchema]
 }, {
   timestamps: true
 });
 
-// Custom validation to ensure either email or phone is provided
+// Custom validation to ensure either email or phone is provided for primary contact
 leadSchema.pre('validate', function(next) {
   if (!this.email && !this.phone) {
     this.invalidate('contact', 'Either email or phone number is required');
   }
   next();
 });
-
 
 module.exports = mongoose.model("Lead", leadSchema);

@@ -445,7 +445,7 @@ const studentController = {
       // 7) Log the READ action
       await createLog('READ', 'USER', student._id, req.user, req);
   
-      // 8) Build the formatted response object for this single student, including school and grade
+      // 8) Build the formatted response object for this single student, including school, grade and notes
       const formatted = {
         id: student._id,
         name: student.firstName + ' ' + student.lastName,
@@ -461,6 +461,7 @@ const studentController = {
         parent: parentDetails,
         school: student.school || null,
         grade: student.grade || null,
+        notes: student.notes || [] // Include the notes array
       };
   
       // 9) Send the formatted student
@@ -804,10 +805,17 @@ const studentController = {
         source, 
         callNotes = [], 
         leadStatus = "warm",
-        leadType = "student"
+        leadType = "student",
+        // Secondary contact fields
+        hasSecondaryContact = false,
+        secondaryFirstName,
+        secondaryLastName,
+        secondaryEmail,
+        secondaryPhone,
+        relationship = "parent"
       } = req.body;
   
-      // Updated validation logic
+      // Updated validation logic - same as before
       if (!firstName || !source) {
         return res.status(400).json({
           status: 'error',
@@ -815,19 +823,19 @@ const studentController = {
         });
       }
   
-      // Clean and normalize email input
+      // Clean and normalize primary email input
       let cleanEmail = null;
       if (email && typeof email === 'string' && email.trim() && email.trim() !== '') {
         cleanEmail = email.toLowerCase().trim();
       }
   
-      // Clean and normalize phone input
+      // Clean and normalize primary phone input
       let cleanPhone = null;
       if (phone && typeof phone === 'string' && phone.trim() && phone.trim() !== '') {
         cleanPhone = phone.trim();
       }
   
-      // Either email OR phone must be provided (flexible contact validation)
+      // Either email OR phone must be provided for primary contact (flexible contact validation)
       if (!cleanEmail && !cleanPhone) {
         return res.status(400).json({
           status: 'error',
@@ -835,7 +843,7 @@ const studentController = {
         });
       }
   
-      // Validate email format if provided
+      // Validate primary email format if provided
       if (cleanEmail && !/\S+@\S+\.\S+/.test(cleanEmail)) {
         return res.status(400).json({
           status: 'error',
@@ -843,7 +851,7 @@ const studentController = {
         });
       }
   
-      // Validate phone format if provided
+      // Validate primary phone format if provided
       if (cleanPhone && !/^\+?[0-9()\-\s]{8,}$/.test(cleanPhone)) {
         return res.status(400).json({
           status: 'error',
@@ -851,11 +859,67 @@ const studentController = {
         });
       }
   
+      // Clean and validate secondary contact fields if provided
+      let secondaryContactData = null;
+      if (hasSecondaryContact) {
+        let cleanSecondaryEmail = null;
+        let cleanSecondaryPhone = null;
+        
+        // Clean secondary email
+        if (secondaryEmail && typeof secondaryEmail === 'string' && secondaryEmail.trim() && secondaryEmail.trim() !== '') {
+          cleanSecondaryEmail = secondaryEmail.toLowerCase().trim();
+          
+          // Validate secondary email format
+          if (!/\S+@\S+\.\S+/.test(cleanSecondaryEmail)) {
+            return res.status(400).json({
+              status: 'error',
+              message: "Invalid secondary contact email format"
+            });
+          }
+        }
+        
+        // Clean secondary phone
+        if (secondaryPhone && typeof secondaryPhone === 'string' && secondaryPhone.trim() && secondaryPhone.trim() !== '') {
+          cleanSecondaryPhone = secondaryPhone.trim();
+          
+          // Validate secondary phone format
+          if (!/^\+?[0-9()\-\s]{8,}$/.test(cleanSecondaryPhone)) {
+            return res.status(400).json({
+              status: 'error',
+              message: "Invalid secondary contact phone number format"
+            });
+          }
+        }
+        
+        // Build secondary contact object if we have any data
+        if (secondaryFirstName?.trim() || secondaryLastName?.trim() || cleanSecondaryEmail || cleanSecondaryPhone) {
+          secondaryContactData = {
+            relationship: relationship
+          };
+          
+          if (secondaryFirstName?.trim()) {
+            secondaryContactData.firstName = secondaryFirstName.trim();
+          }
+          
+          if (secondaryLastName?.trim()) {
+            secondaryContactData.lastName = secondaryLastName.trim();
+          }
+          
+          if (cleanSecondaryEmail) {
+            secondaryContactData.email = cleanSecondaryEmail;
+          }
+          
+          if (cleanSecondaryPhone) {
+            secondaryContactData.phone = cleanSecondaryPhone;
+          }
+        }
+      }
+  
       // Validate leadStatus
-      if (!["hot", "warm", "cold"].includes(leadStatus)) {
+      if (!["initial_contact", "follow_up", "hot", "warm", "cold", "converted", "lost"].includes(leadStatus)) {
         return res.status(400).json({
           status: 'error',
-          message: "leadStatus must be 'hot', 'warm', or 'cold'"
+          message: "leadStatus must be one of: initial_contact, follow_up, hot, warm, cold, converted, lost"
         });
       }
   
@@ -867,9 +931,17 @@ const studentController = {
         });
       }
   
-      // Check for email uniqueness ONLY if email is provided
+      // Validate relationship if secondary contact is provided
+      if (secondaryContactData && !["parent", "guardian", "sibling", "relative", "friend", "other"].includes(relationship)) {
+        return res.status(400).json({
+          status: 'error',
+          message: "relationship must be one of: parent, guardian, sibling, relative, friend, other"
+        });
+      }
+  
+      // Check for primary email uniqueness ONLY if email is provided
       if (cleanEmail) {
-        // Check if email exists in leads table
+        // Check if email exists in leads table (primary email)
         const existingLead = await Lead.findOne({ 
           email: cleanEmail 
         });
@@ -894,6 +966,45 @@ const studentController = {
         }
       }
   
+      // Check for secondary email uniqueness if provided
+      if (secondaryContactData?.email) {
+        // Check if secondary email exists in leads table (primary email)
+        const existingLeadSecondary = await Lead.findOne({ 
+          email: secondaryContactData.email 
+        });
+  
+        if (existingLeadSecondary) {
+          return res.status(400).json({
+            status: 'error',
+            message: "A lead with this secondary contact email already exists"
+          });
+        }
+  
+        // Check if secondary email exists as secondary contact in other leads
+        const existingSecondaryContact = await Lead.findOne({ 
+          'secondaryContact.email': secondaryContactData.email 
+        });
+  
+        if (existingSecondaryContact) {
+          return res.status(400).json({
+            status: 'error',
+            message: "This secondary contact email is already in use"
+          });
+        }
+  
+        // Check if secondary email exists in users table
+        const existingUserSecondary = await User.findOne({ 
+          email: secondaryContactData.email 
+        });
+  
+        if (existingUserSecondary) { 
+          return res.status(400).json({
+            status: 'error',
+            message: "This secondary contact email is already registered as a user. Please use a different email."
+          });
+        }
+      }
+  
       const leadData = {
         firstName: firstName.trim(),
         source: source.trim(),
@@ -902,7 +1013,7 @@ const studentController = {
         callNotes
       };
   
-      // Only add optional fields if they have actual values
+      // Only add optional primary contact fields if they have actual values
       if (lastName && lastName.trim()) {
         leadData.lastName = lastName.trim();
       }
@@ -918,6 +1029,11 @@ const studentController = {
       // IMPORTANT: Only add email if it has a value
       if (cleanEmail) {
         leadData.email = cleanEmail;
+      }
+  
+      // Add secondary contact if provided
+      if (secondaryContactData) {
+        leadData.secondaryContact = secondaryContactData;
       }
   
       console.log('Creating lead with data:', leadData); // Debug log
@@ -945,6 +1061,9 @@ const studentController = {
         } else if (err.keyPattern?.phone) {
           field = 'phone';
           message = "A lead with this phone number already exists";
+        } else if (err.keyPattern?.['secondaryContact.email']) {
+          field = 'secondaryEmail';
+          message = "A lead with this secondary contact email already exists";
         }
   
         return res.status(400).json({
@@ -989,28 +1108,144 @@ const studentController = {
 
   updateLead: async (req, res, next) => {
     try {
-      const allowed = ["firstName", "lastName", "phone", "address", "email", "leadStatus", "source"];
-      const updates = {};
-      allowed.forEach(f => {
-        if (req.body[f] !== undefined) updates[f] = req.body[f];
-      });
+      // Validate ObjectId
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Invalid lead ID format.'
+        });
+      }
 
+      // Extract all possible fields from the request
+      const {
+        firstName,
+        lastName,
+        phone,
+        address,
+        email,
+        leadStatus,
+        source,
+        leadType,
+        hasSecondaryContact,
+        secondaryFirstName,
+        secondaryLastName,
+        secondaryEmail,
+        secondaryPhone,
+        relationship,
+        // newNote handled below
+      } = req.body;
+
+      // Build the update object
+      const updates = {};
+      if (firstName !== undefined) updates.firstName = firstName;
+      if (lastName !== undefined) updates.lastName = lastName;
+      if (phone !== undefined) updates.phone = phone;
+      if (address !== undefined) updates.address = address;
+      if (email !== undefined) updates.email = email;
+      if (leadStatus !== undefined) updates.leadStatus = leadStatus;
+      if (source !== undefined) updates.source = source;
+      if (leadType !== undefined) updates.leadType = leadType;
+
+      // Handle secondary contact
+      if (hasSecondaryContact) {
+        // Clean and validate secondary contact fields
+        let cleanSecondaryEmail = null;
+        let cleanSecondaryPhone = null;
+        if (secondaryEmail && typeof secondaryEmail === 'string' && secondaryEmail.trim() && secondaryEmail.trim() !== '') {
+          cleanSecondaryEmail = secondaryEmail.toLowerCase().trim();
+          // Validate secondary email format
+          if (!/\S+@\S+\.\S+/.test(cleanSecondaryEmail)) {
+            return res.status(400).json({
+              status: 'error',
+              message: 'Invalid secondary contact email format'
+            });
+          }
+        }
+        if (secondaryPhone && typeof secondaryPhone === 'string' && secondaryPhone.trim() && secondaryPhone.trim() !== '') {
+          cleanSecondaryPhone = secondaryPhone.trim();
+          // Validate secondary phone format
+          if (!/^\+?[0-9()\-\s]{8,}$/.test(cleanSecondaryPhone)) {
+            return res.status(400).json({
+              status: 'error',
+              message: 'Invalid secondary contact phone number format'
+            });
+          }
+        }
+        // Build secondary contact object if we have any data
+        if (secondaryFirstName?.trim() || secondaryLastName?.trim() || cleanSecondaryEmail || cleanSecondaryPhone) {
+          updates.secondaryContact = {
+            relationship: relationship || 'parent'
+          };
+          if (secondaryFirstName?.trim()) updates.secondaryContact.firstName = secondaryFirstName.trim();
+          if (secondaryLastName?.trim()) updates.secondaryContact.lastName = secondaryLastName.trim();
+          if (cleanSecondaryEmail) updates.secondaryContact.email = cleanSecondaryEmail;
+          if (cleanSecondaryPhone) updates.secondaryContact.phone = cleanSecondaryPhone;
+        }
+      } else if (hasSecondaryContact === false) {
+        // Explicitly clear secondary contact if toggled off
+        updates.secondaryContact = undefined;
+      }
+
+      // Uniqueness checks for email and secondary email (if changed)
+      if (email) {
+        const existingLead = await Lead.findOne({ email, _id: { $ne: req.params.id } });
+        if (existingLead) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'A lead with this email already exists'
+          });
+        }
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'This email is already registered as a user. Please use a different email.'
+          });
+        }
+      }
+      if (updates.secondaryContact && updates.secondaryContact.email) {
+        const secEmail = updates.secondaryContact.email;
+        const existingLeadSecondary = await Lead.findOne({ email: secEmail, _id: { $ne: req.params.id } });
+        if (existingLeadSecondary) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'A lead with this secondary contact email already exists'
+          });
+        }
+        const existingSecondaryContact = await Lead.findOne({ 'secondaryContact.email': secEmail, _id: { $ne: req.params.id } });
+        if (existingSecondaryContact) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'This secondary contact email is already in use'
+          });
+        }
+        const existingUserSecondary = await User.findOne({ email: secEmail });
+        if (existingUserSecondary) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'This secondary contact email is already registered as a user. Please use a different email.'
+          });
+        }
+      }
+
+      // Add new note if provided
       if (req.body.newNote && req.body.newNote.content) {
         const newNote = {
           content: req.body.newNote.content,
-          createdBy: req.body.newNote.createdBy || req.user._id,
+          createdBy: req.body.newNote.createdBy || req.user?._id,
           date: new Date()
         };
         updates.$push = { callNotes: newNote };
       }
 
+      // Update the lead
       const lead = await Lead.findByIdAndUpdate(
         req.params.id,
         updates,
         { new: true, runValidators: true }
       );
 
-      if (!lead) throw new Error("Lead not found");
+      if (!lead) throw new Error('Lead not found');
       res.status(200).json({ status: 'success', data: lead });
     } catch (err) {
       next(err);
@@ -1034,7 +1269,7 @@ const studentController = {
   updateLeadStatus: async (req, res, next) => {
     try {
       const { status } = req.body;
-      if (!["hot", "warm", "cold", "lost", "converted"].includes(status)) {
+      if (!["initial_contact", "follow_up", "hot", "warm", "cold", "converted", "lost"].includes(status)) {
         throw new Error("Invalid lead status");
       }
       const lead = await Lead.findByIdAndUpdate(
@@ -1157,7 +1392,78 @@ const studentController = {
       if (!lead) throw new Error("Lead not found");
       res.status(200).json({ status: 'success', data: { message: 'Lead deleted successfully' } });
     } catch (err) { next(err); }
-  }
+  },
+
+  // --- STUDENT NOTES CRUD ---
+  addNote: async (req, res) => {
+    try {
+      const student = await User.findOne({ _id: req.params.id, role: 'student' });
+      if (!student) {
+        return res.status(404).json({ status: 'Error', message: 'Student not found' });
+      }
+      const { content } = req.body;
+      if (!content || !content.trim()) {
+        return res.status(400).json({ status: 'Error', message: 'Note content is required' });
+      }
+      const note = {
+        content: content.trim(),
+        createdBy: req.user._id,
+        date: new Date()
+      };
+      student.notes.push(note);
+      await student.save();
+      return res.status(201).json({ status: 'success', note: student.notes[student.notes.length - 1] });
+    } catch (error) {
+      return res.status(500).json({ status: 'Error', message: 'Error adding note', error: error.message });
+    }
+  },
+
+  editNote: async (req, res) => {
+    try {
+      const student = await User.findOne({ _id: req.params.id, role: 'student' });
+      if (!student) {
+        return res.status(404).json({ status: 'Error', message: 'Student not found' });
+      }
+      const note = student.notes.id(req.params.noteId);
+      if (!note) {
+        return res.status(404).json({ status: 'Error', message: 'Note not found' });
+      }
+      if (req.body.content && req.body.content.trim()) {
+        note.content = req.body.content.trim();
+      }
+      note.date = new Date();
+      await student.save();
+      return res.status(200).json({ status: 'success', note });
+    } catch (error) {
+      return res.status(500).json({ status: 'Error', message: 'Error editing note', error: error.message });
+    }
+  },
+
+  deleteNote: async (req, res) => {
+    try {
+      console.log('Delete Note called with studentId:', req.params.id, 'noteId:', req.params.noteId);
+      const student = await User.findOne({ _id: req.params.id, role: 'student' });
+      if (!student) {
+        console.log('Student not found');
+        return res.status(404).json({ status: 'Error', message: 'Student not found' });
+      }
+      console.log('Student found:', student._id);
+      const noteIndex = student.notes.findIndex(n => n._id && n._id.toString() === req.params.noteId);
+      if (noteIndex === -1) {
+        console.log('Note not found in student.notes:', req.params.noteId);
+        return res.status(404).json({ status: 'Error', message: 'Note not found' });
+      }
+      console.log('Removing note at index:', noteIndex);
+      student.notes.splice(noteIndex, 1);
+      console.log('Saving student after note removal...');
+      await student.save();
+      console.log('Note deleted successfully');
+      return res.status(200).json({ status: 'success', message: 'Note deleted' });
+    } catch (error) {
+      console.error('Error in deleteNote:', error);
+      return res.status(500).json({ status: 'Error', message: 'Error deleting note', error: error.message });
+    }
+  },
 };
 
 

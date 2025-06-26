@@ -309,6 +309,76 @@ const RoomAvailabilityController = {
         } catch (error) {
             res.status(500).json({ message: 'Error calculating room usage statistics', error: error.message });
         }
+    },
+    // Get weekly availability for all rooms
+    getWeeklyAvailability: async (req, res) => {
+        try {
+            const moment = require('moment');
+            const { startDate, capacity } = req.query;
+            if (!startDate) {
+                return res.status(400).json({ message: 'Missing required parameter: startDate (YYYY-MM-DD)' });
+            }
+            const start = moment(startDate, 'YYYY-MM-DD');
+            if (!start.isValid()) {
+                return res.status(400).json({ message: 'Invalid startDate format. Use YYYY-MM-DD.' });
+            }
+            // 7 days in the week
+            const days = Array.from({ length: 7 }, (_, i) => start.clone().add(i, 'days'));
+            // Working hours
+            const WORK_START = '08:00';
+            const WORK_END = '20:00';
+
+            // Build room query
+            const roomQuery = {};
+            if (capacity) {
+                roomQuery.capacity = { $gte: Number(capacity) };
+            }
+            const rooms = await Room.find(roomQuery);
+
+            // Helper to get free slots for a day
+            function getFreeSlots(bookings, date) {
+                // All slots are in [start, end) format
+                const slots = [];
+                let lastEnd = WORK_START;
+                // Filter bookings for this date and sort by startTime
+                const dayBookings = bookings
+                    .filter(b => moment(b.date).isSame(date, 'day'))
+                    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+                for (const b of dayBookings) {
+                    if (b.startTime > lastEnd) {
+                        slots.push({ startTime: lastEnd, endTime: b.startTime });
+                    }
+                    lastEnd = b.endTime > lastEnd ? b.endTime : lastEnd;
+                }
+                if (lastEnd < WORK_END) {
+                    slots.push({ startTime: lastEnd, endTime: WORK_END });
+                }
+                return slots;
+            }
+
+            // Build response
+            const result = rooms.map(room => {
+                const availability = {};
+                for (const day of days) {
+                    availability[day.format('YYYY-MM-DD')] = getFreeSlots(room.bookings || [], day);
+                }
+                return {
+                    room: {
+                        id: room._id,
+                        name: room.name,
+                        description: room.description,
+                        capacity: room.capacity
+                    },
+                    availability
+                };
+            });
+            res.json({
+                week: days.map(d => d.format('YYYY-MM-DD')),
+                rooms: result
+            });
+        } catch (error) {
+            res.status(500).json({ message: 'Error fetching weekly availability', error: error.message });
+        }
     }
 };
 

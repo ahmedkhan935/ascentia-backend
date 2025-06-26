@@ -54,6 +54,7 @@ const classSchema = new mongoose.Schema({
   },
   startDate: { type: Date, default: Date.now },
   endDate: { type: Date },
+  classCap: { type: Number, required: true },
 });
 
 const Class = mongoose.model("Class", classSchema);

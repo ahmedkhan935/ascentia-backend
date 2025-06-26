@@ -275,8 +275,16 @@ const ClassController = {
         room,
         startDate,
         endDate,
-        sessionType = "our-space"
+        sessionType = "our-space",
+        classCap
       } = req.body;
+
+      if (students.length > classCap) {
+        return res.status(400).json({
+          status: "failed",
+          message: `Cannot enroll more than ${classCap} students in this class.`
+        });
+      }
 
       const type = students.length > 1 ? "group" : "individual";
       
@@ -362,7 +370,8 @@ const ClassController = {
         startDate,
         endDate,
         type,
-        sessionType
+        sessionType,
+        classCap
       });
 
       const savedClass = await newClass.save();
