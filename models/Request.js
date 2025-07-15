@@ -20,21 +20,18 @@ const requestSchema = new mongoose.Schema({
         endTime:String,
 
     },
-    newSession:{type:{
-        date: { type: Date, required: true },
-        startTime: { type: String, required: true },
-        endTime: { type: String, required: true },
-        room: { type: mongoose.Schema.Types.ObjectId, ref: "Room" },
-
-
-
-    },required:false},
-    oldSession:{type:{
-        date: { type: Date, required: true },
-        startTime: { type: String, required: true },
-        endTime: { type: String, required: true },
-        room: { type: mongoose.Schema.Types.ObjectId, ref: "Room" },
-    },required:false},
+    newSession:{
+        date: { type: Date },
+        startTime: { type: String },
+        endTime: { type: String },
+        room: { type: mongoose.Schema.Types.ObjectId, ref: "Room" }
+    },
+    oldSession:{
+        date: { type: Date },
+        startTime: { type: String },
+        endTime: { type: String },
+        room: { type: mongoose.Schema.Types.ObjectId, ref: "Room" }
+    },
     oldShiftId:{type:mongoose.Schema.Types.ObjectId}
 
 });

@@ -412,6 +412,58 @@ const tutorController = {
     }
   },
 
+  getByUserId: async (req, res) => {
+    try {
+      const tutor = await TutorProfile.findOne({ user: req.params.userId })
+        .populate("user", "-password")
+        .populate("classCategories");
+
+      if (!tutor) {
+        return res.status(404).json({ message: "Tutor not found" });
+      }
+      const totalWorkHours =
+        tutor.shifts?.reduce((total, shift) => {
+          const [startHour, startMinute] = shift.startTime
+            .split(":")
+            .map(Number);
+          const [endHour, endMinute] = shift.endTime.split(":").map(Number);
+          const startTime = startHour + startMinute / 60;
+          const endTime = endHour + endMinute / 60;
+          return total + (endTime - startTime);
+        }, 0) || 0;
+      const categoryNames = tutor.classCategories
+        ? tutor.classCategories.map(cat => cat.name)
+        : [];
+      // Flattened tutor object
+      const flatTutor = {
+        email: tutor.user?.email,
+        role: tutor.user?.role,
+        firstName: tutor.user?.firstName,
+        lastName: tutor.user?.lastName,
+        phone: tutor.user?.phone,
+        dateOfBirth: tutor.user?.dateOfBirth || tutor.personalDetails?.dateOfBirth,
+        subjects: tutor.subjects,
+        categoryNames,
+        atar: tutor.atar,
+        yearCompleted: tutor.yearCompleted,
+        teachingExperience: tutor.teachingExperience,
+        specializations: tutor.specializations,
+        achievements: tutor.achievements,
+        degree: tutor.qualifications?.[0]?.degree || tutor.education?.degree,
+        university: tutor.qualifications?.[0]?.institution || tutor.education?.university,
+        address: tutor.location?.address,
+        status: tutor.status,
+        shifts: tutor.shifts,
+        workHours: totalWorkHours
+      };
+      res.json({ data: { tutor: flatTutor } });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: "Error fetching tutor", error: error.message });
+    }
+  },
+
   update: async (req, res) => {
     try {
       const {

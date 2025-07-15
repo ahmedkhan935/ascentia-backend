@@ -16,7 +16,7 @@ router.put  ('/:id/booking/:bookingId',          [authenticateJWT, isAdmin], roo
 router.delete('/:id/booking/:bookingId',         [authenticateJWT, isAdmin], roomController.RemoveBooking);
 
 /* ─────────────────────────────── ROOM-USAGE helpers ───────────────────────────────── */
-router.get('/available',          [authenticateJWT, isAdmin], RoomAvailabilityController.getAvailableRooms);
+router.get('/available',          [authenticateJWT], RoomAvailabilityController.getAvailableRooms);
 router.get('/stats',              [authenticateJWT, isAdmin], RoomAvailabilityController.getRoomUsageStats);
 router.get('/weekly-availability', [authenticateJWT, isAdmin], RoomAvailabilityController.getWeeklyAvailability);
 
@@ -26,7 +26,7 @@ router.get('/:roomId/availability',[authenticateJWT, isAdmin], RoomAvailabilityC
 router.get('/:roomId/schedule',   [authenticateJWT, isAdmin], RoomAvailabilityController.getRoomSchedule);
 
 /* ─────────────────────────────── READ (generic) ───────────────────────────────────── */
-router.get('/',                   [authenticateJWT, isAdmin], roomController.GetAllRooms);
+router.get('/',                   [authenticateJWT], roomController.GetAllRooms);
 router.get('/:id',                [authenticateJWT, isAdmin], roomController.GetRoom);
 
 

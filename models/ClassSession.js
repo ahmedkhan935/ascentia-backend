@@ -47,7 +47,6 @@ const classSessionSchema = new mongoose.Schema({
       difficulty: { type: String },
     },
   ],
-  // Fixed room field - only add if sessionType is 'our-space'
   room: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: "Room",
@@ -72,6 +71,18 @@ const classSessionSchema = new mongoose.Schema({
     ref: "ClassSession",
   },
   notes: String,
+  markedCompletedByTutor: {
+    type: Boolean,
+    default: false
+  },
+  markRescheduleByTutor: {
+    type: Boolean,
+    default: false
+  },
+  markCancelByTutor: {
+    type: Boolean,
+    default: false
+  },
 });
 
 // Add pre-save middleware to clean up room field for non-our-space sessions

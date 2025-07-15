@@ -13,7 +13,7 @@ router.get("/activities", [authenticateJWT, isAdmin], tutorController.getActivit
 router.get("/payments/admin", [authenticateJWT, isAdmin], tutorController.getPayments);
 router.get('/requests/pending', [authenticateJWT, isAdmin], tutorController.getPendingRequests);
 router.get('/requests/all', [authenticateJWT, isAdmin], tutorController.getAllRequests);
-router.get('/:id', [authenticateJWT, isAdmin], tutorController.getById);
+router.get('/:id', [authenticateJWT,isAdmin], tutorController.getById);
 router.put('/:id', [authenticateJWT, isAdmin], tutorController.update);
 router.post('/check-email', tutorController.checkEmailExists);
 router.patch(
@@ -43,7 +43,7 @@ router.get(
   );
 router.put('/payment/:id',[authenticateJWT,isAdmin], tutorController.updatePaymentStatus);
 router.put('/rejectPayment/:id',[authenticateJWT,isAdmin],tutorController.rejectPayment);
-
+router.get('/by-user/:userId', [authenticateJWT, isTutor], tutorController.getByUserId);
 
 
 module.exports = router;
