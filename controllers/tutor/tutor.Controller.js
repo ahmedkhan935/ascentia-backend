@@ -686,6 +686,7 @@ const tutorController = {
               startTime: request.newSession.startTime,
               endTime: request.newSession.endTime,
               room: request.newSession.room || undefined,
+              sessionType: request.newSession.sessionType,
               status: "rescheduled", // set status to rescheduled
               markedCompletedByTutor: false,
               markRescheduleByTutor: false // reset the flag
@@ -1391,23 +1392,24 @@ const tutorController = {
       await sessionToReschedule.save();
   
       // Check room availability for new session time
-      const roomConflict = await ClassSession.findOne({
-        room: newSession.room,
-        date: newSession.date,
-        $or: [
-          {
-            startTime: { $lt: newSession.endTime },
-            endTime: { $gt: newSession.startTime },
-          },
-        ],
-        _id: { $ne: sessionId },
-      });
-  
-      if (roomConflict) {
-        return res.status(400).json({
-          status: "error",
-          message: "Room is not available at the requested time",
+      if (newSession.room) {
+        const roomConflict = await ClassSession.findOne({
+          room: newSession.room,
+          date: newSession.date,
+          $or: [
+            {
+              startTime: { $lt: newSession.endTime },
+              endTime: { $gt: newSession.startTime },
+            },
+          ],
+          _id: { $ne: sessionId },
         });
+        if (roomConflict) {
+          return res.status(400).json({
+            status: "error",
+            message: "Room is not available at the requested time",
+          });
+        }
       }
   
       // Create request data
@@ -1418,12 +1420,16 @@ const tutorController = {
         classId,
         reason,
         sessionId,
-        newSession,
+        newSession: {
+          ...newSession,
+          sessionType: newSession.sessionType || sessionToReschedule.sessionType
+        },
         oldSession: {
           date: sessionToReschedule.date,
           startTime: sessionToReschedule.startTime,
           endTime: sessionToReschedule.endTime,
           room: sessionToReschedule.room,
+          sessionType: sessionToReschedule.sessionType
         },
         message: `Session reschedule from ${sessionToReschedule.startTime} - ${sessionToReschedule.endTime} to ${newSession.startTime} - ${newSession.endTime}`,
         subject: `Session reschedule request for ${sessionToReschedule.date} to ${newSession.date}`,
